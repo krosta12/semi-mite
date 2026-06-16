@@ -49,7 +49,7 @@ public class CppParser {
         String name = m.group(2).trim();
         String paramsRaw = m.group(3).trim();
 
-        if (!SUPPORTED_TYPES.contains(returnType) && !returnType.endsWith("*")) {
+        if (!SUPPORTED_TYPES.contains(returnType) && (!returnType.endsWith("*") || returnType.equals("void*"))) {
             return Optional.empty();
         }
 
