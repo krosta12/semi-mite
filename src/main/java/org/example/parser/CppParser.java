@@ -67,7 +67,7 @@ public class CppParser {
             String trimmed = param.trim();
             String type = extractType(trimmed);
 
-            if (type == null || (!SUPPORTED_TYPES.contains(type) && !type.endsWith("*"))) {
+            if (type == null || (!SUPPORTED_TYPES.contains(type) && (!type.endsWith("*") || type.equals("void*")))) {
                 return null;
             }
             types.add(type);
