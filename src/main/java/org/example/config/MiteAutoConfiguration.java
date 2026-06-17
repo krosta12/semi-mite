@@ -23,7 +23,6 @@ public class MiteAutoConfiguration {
     @PostConstruct
     public void initGlobalContext() {
         MiteContext.init(props.getAlignmentBytes());
-        System.out.println("[MITE STARTUP] Blobal memory alignment set to: " + props.getAlignmentBytes() + " bytes.");
     }
 
     @Bean

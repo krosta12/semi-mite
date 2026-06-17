@@ -1,11 +1,15 @@
 package org.example.parser;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 import java.util.regex.*;
 
 public class CppParser {
+    private static final Logger log = LoggerFactory.getLogger(CppParser.class);
 
     private static final Set<String> SUPPORTED_TYPES = Set.of(
             "int", "long", "double", "float", "bool", "std::string", "void", "const char*",
@@ -43,7 +47,9 @@ public class CppParser {
 
                 String fullSignatureStr = sb.toString().trim();
                 Optional<FunctionSignature> sig = parseSignature(fullSignatureStr);
-                System.out.println("[MITE PARSER] Registered signature: '" + fullSignatureStr + "' -> " + sig.isPresent());
+                if (sig.isPresent()) {
+                    log.trace("Registered signature: {} -> {}", fullSignatureStr, sig.get());
+                }
                 sig.ifPresent(result::add);
 
                 i = j - 1;

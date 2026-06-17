@@ -3,6 +3,8 @@ package org.example.scanner;
 import org.example.parser.CppParser;
 import org.example.parser.FunctionSignature;
 import org.example.engine.NativeResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -14,6 +16,10 @@ public class FunctionRegistry {
     private final Path scriptsDir;
     private final CppParser parser = new CppParser();
     private final Map<String, List<ResolvedFunction>> index = new ConcurrentHashMap<>();
+
+
+    private static final Logger log = LoggerFactory.getLogger(FunctionRegistry.class);
+
 
     public FunctionRegistry(Path scriptsDir) {
         this.scriptsDir = scriptsDir;
@@ -55,7 +61,7 @@ public class FunctionRegistry {
                     WatchKey key = watchService.take();
                     Thread.sleep(150);
                     key.pollEvents();
-                    System.out.println("[MITE] Change in cppScripts — rescan...");
+                    log.debug("[MITE] Change in cppScripts — rescan...");
                     scan();
                     key.reset();
                 }

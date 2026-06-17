@@ -1,5 +1,8 @@
 package org.example.compiler;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.ArrayList;
@@ -13,6 +16,8 @@ public class CppCompiler {
     private final Map<String, CachedLib> cache = new ConcurrentHashMap<>();
     private final String customCompilerPath;
     private final List<String> compilerFlags;
+
+    private static final Logger log = LoggerFactory.getLogger(CppCompiler.class);
 
     public CppCompiler(Path cacheDir, String customCompilerPath, List<String> compilerFlags) {
         this.cacheDir = cacheDir;
@@ -76,7 +81,7 @@ public class CppCompiler {
         cmd.add(out.toAbsolutePath().toString());
         cmd.add(cppFile.toAbsolutePath().toString());
 
-        System.out.println(">>> MITE COMPILER CMD: " + cmd);
+        log.debug("[MITE COMPILER] CMD flags for C++ compiler: {}", cmd);
 
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
