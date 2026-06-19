@@ -49,20 +49,22 @@ The framework automatically:
 
 * Compiles native code
 * Loads generated shared libraries
-* Resolves exported symbols
+* Resolves exported symbols by function name
 * Creates dynamic proxy implementations
 * Handles Panama linker configuration
 
 Example:
 
 ```java
-@MiteClient(script = "cppScripts/math.cpp")
+@MiteClient(script = "cppScripts/math.cpp") //path is decorative
 public interface MathClient {
 
     float calculate(float[] values, int size);
 
 }
 ```
+
+> **Note:** Function resolution is based on method name matching against all functions registered from the `cppScripts` directory. The optional `script` attribute is informational and does not currently restrict resolution to a specific file. Function names across all `.cpp` files in `cppScripts` must therefore be unique.
 
 No JNI code.
 
@@ -173,37 +175,102 @@ Detected signatures are converted into the required Panama descriptors automatic
 
 # 📊 Performance Statistics & Benchmarks
 
-The following benchmarks were executed on a dataset containing **20,000,000 complex objects**.
+The following benchmarks were executed on a dataset of **20,000,000 float elements**.
 
-## Execution Speed
+All C++ measurements reflect **pure compute time only** — data is pre-loaded into off-heap `MiteArray` before the benchmark loop begins and remains there across iterations. This reflects the intended use case: long-lived off-heap state modified repeatedly by native code, with no per-call copy overhead.
 
-| Implementation           | Execution Time |
-| ------------------------ | -------------- |
-| Optimized Java Loop      | 63,170 ms      |
-| Native C++ via semi-mite | 30,686 ms      |
+Java measurements reflect the equivalent logic running on JVM heap arrays, timed identically (copy-to-fresh-array is outside the timer).
 
-### Result
-
-🔥 **2.06× faster execution**
+> **Key insight:** semi-mite does not automatically make everything faster. The JVM's HotSpot JIT is highly competitive on simple loops. The benefit of native C++ grows with computational complexity and with workloads that keep data off-heap across multiple calls.
 
 ---
 
-## Memory Transfer Latency
+## Benchmark Results
 
-| Method                       | Latency  |
-| ---------------------------- | -------- |
-| Standard Heap-to-Native Copy | 39.10 ms |
-| MiteArray Zero-Copy Transfer | 4.68 ms  |
+### Scenario 1 — Simple Sum
 
-### Result
+*Trivial accumulation loop. JIT auto-vectorises this effectively — C++ has no inherent advantage here.*
 
-🚀 **11.3× lower transfer overhead**
+| Compiler Flags                                                                | Java (ms) | C++ (ms) |   Speedup |
+| ----------------------------------------------------------------------------- | --------: | -------: | --------: |
+| `-O0`                                                                         |     13.81 |    55.62 |     0.25× |
+| `-O2`                                                                         |     13.87 |    14.05 |     0.99× |
+| `-O2 -DNDEBUG -flto=auto -pipe`                                               |     13.81 |    14.28 |     0.97× |
+| `-O3 -DNDEBUG -flto=auto -march=native -fomit-frame-pointer`                  |     13.76 |    13.95 |     0.99× |
+| `-O3 -march=native -flto=auto -DNDEBUG -Ofast -fno-plt -fomit-frame-pointer`  |     13.83 |     3.49 | **3.96×** |
+| `-Ofast -march=native -flto=auto -fno-plt -fomit-frame-pointer -DNDEBUG`      |     13.82 |     3.41 | **4.05×** |
+
+**Best Result:** 🚀 **4.05× faster than Java** (requires `-Ofast` with full CPU-specific flags)
 
 ---
 
-## Architectural Impact
+### Scenario 2 — Explosion Simulation
 
-By leveraging direct off-heap memory access and Project Panama's Foreign Function & Memory API, semi-mite minimizes JVM memory movement during native execution and enables near-native throughput for compute-intensive workloads.
+*Per-element `sqrt` + conditional branch. JIT is competitive; C++ gains an edge with aggressive vectorisation flags.*
+
+| Compiler Flags                                                                | Java (ms) | C++ (ms) |   Speedup |
+| ----------------------------------------------------------------------------- | --------: | -------: | --------: |
+| `-O0`                                                                         |     62.70 |   172.58 |     0.36× |
+| `-O2`                                                                         |     62.70 |    66.37 |     0.94× |
+| `-O2 -DNDEBUG -flto=auto -pipe`                                               |     62.54 |    66.24 |     0.94× |
+| `-O3 -DNDEBUG -flto=auto -march=native -fomit-frame-pointer`                  |     62.14 |    66.37 |     0.94× |
+| `-O3 -march=native -flto=auto -DNDEBUG -Ofast -fno-plt -fomit-frame-pointer`  |     63.04 |    29.95 | **2.10×** |
+| `-Ofast -march=native -flto=auto -fno-plt -fomit-frame-pointer -DNDEBUG`      |     61.86 |    29.10 | **2.13×** |
+
+**Best Result:** 🚀 **2.13× faster than Java**
+
+---
+
+### Scenario 3 — Heavy Math
+
+*Per-element `sin`, `cos`, `exp`. JIT cannot optimise `Math.sin/exp` as aggressively as C++ with `-ffast-math` + SVML/libmvec vectorisation. C++ advantage is consistent across all optimisation levels.*
+
+| Compiler Flags                                                                | Java (ms) | C++ (ms) |   Speedup |
+| ----------------------------------------------------------------------------- | --------: | -------: | --------: |
+| `-O0`                                                                         |    386.46 |   390.74 |     0.99× |
+| `-O2`                                                                         |    392.68 |   231.03 |     1.70× |
+| `-O2 -DNDEBUG -flto=auto -pipe`                                               |    383.70 |   220.37 |     1.74× |
+| `-O3 -DNDEBUG -flto=auto -march=native -fomit-frame-pointer`                  |    387.37 |   225.63 |     1.72× |
+| `-O3 -march=native -flto=auto -DNDEBUG -Ofast -fno-plt -fomit-frame-pointer`  |    404.47 |   225.17 | **1.80×** |
+| `-Ofast -march=native -flto=auto -fno-plt -fomit-frame-pointer -DNDEBUG`      |    388.71 |   217.04 | **1.79×** |
+
+**Best Result:** 🚀 **1.80× faster than Java** — consistent across all flag configurations
+
+---
+
+### Summary
+
+| Scenario          | Java competitive? | C++ advantage                              |
+| ----------------- | :---------------: | ------------------------------------------ |
+| Simple sum        | ✅ Yes (at `-O2`)  | Only with `-Ofast` + full CPU flags (4×)   |
+| Explosion (sqrt)  | ✅ Yes (at `-O2`)  | With `-Ofast -march=native` (2.13×)        |
+| Heavy math        | ❌ No              | Even at `-O2`, C++ wins consistently (1.7×)|
+
+**When to use semi-mite:**
+- Computation involves transcendental functions (`sin`, `cos`, `exp`, `log`)
+- Data lives off-heap across multiple calls (long-lived `MiteArray`)
+- You are integrating existing C++ libraries or algorithms into a Spring application
+
+**When to stay with Java:**
+- Simple loops over primitive arrays — JIT handles these very well
+- You need the full Java ecosystem (reflection, generics, streams)
+
+---
+
+## Repeated Call Overhead: Heap Array vs MiteArray
+
+Benchmark: `calculate_cosine_similarity` called **20 times** on **5,000,000 floats**.
+
+With a plain Java `float[]`, the framework marshals the entire array from JVM heap to off-heap memory on every single call. With `MiteArray`, memory lives off-heap permanently — C++ accesses it directly with no copy per call.
+
+| Method                              | Total (20 calls) | Avg per call |
+| ----------------------------------- | ---------------: | -----------: |
+| Heap `float[]` (marshal every call) |         470.2 ms |     23.51 ms |
+| `MiteArray` (zero-copy off-heap)    |          72.4 ms |      3.62 ms |
+
+**Result:** 🚀 **6.49× faster per call — 397.8 ms saved over 20 calls**
+
+The advantage compounds with call frequency. In simulation loops, signal processing pipelines, or any workload that calls native code repeatedly on the same dataset, keeping data in a `MiteArray` eliminates the dominant cost entirely.
 
 ---
 
@@ -234,13 +301,64 @@ The compiler must be accessible through the system `PATH`.
 
 ## JVM Startup Flags
 
-Project Panama requires native access permissions.
-
-Launch your application with:
+Project Panama requires native access permissions. Launch your application with:
 
 ```bash
---enable-native-access=ALL-UNNAMED --enable-preview
+--enable-native-access=ALL-UNNAMED
 ```
+
+> `--enable-preview` is **not required**. The `java.lang.foreign` API has been stable (non-preview) since Java 22.
+
+---
+
+## Configuration
+
+All settings are configured via `application.properties` under the `mite.*` prefix. Everything has a sensible default — no configuration is required to get started.
+
+| Property               | Default         | Description                                                                  |
+| ---------------------- | --------------- | ---------------------------------------------------------------------------- |
+| `mite.scripts-dir`     | `cppScripts`    | Directory scanned for `.cpp` source files (relative to working directory)    |
+| `mite.cache-dir`       | `.mite-cache`   | Directory where compiled `.dll`/`.so` libraries are cached and reused        |
+| `mite.compiler-path`   | *(auto-detect)* | Explicit compiler binary path. Leave unset to resolve from system `PATH`     |
+| `mite.compiler-flags`  | `-O2`           | Flags passed to the compiler, comma-separated                                |
+| `mite.alignment-bytes` | `4`             | Struct field alignment in bytes used during native memory layout             |
+
+---
+
+### Minimal setup (defaults)
+
+Nothing to configure. Drop `.cpp` files into `cppScripts/` and start the application.
+
+```properties
+# these are the defaults — only set them if you need different paths
+mite.scripts-dir=cppScripts
+mite.cache-dir=.mite-cache
+```
+
+---
+
+### Production setup with aggressive optimisation
+
+```properties
+mite.compiler-flags=-Ofast,-march=native,-flto=auto,-fno-plt,-fomit-frame-pointer,-DNDEBUG
+mite.alignment-bytes=32
+```
+
+**`mite.compiler-flags`** — flags are passed directly to `g++`/`clang++`. The benchmark section shows the measured impact of different flag combinations across three workload types. For maximum performance, `-Ofast -march=native` is recommended; for safer IEEE-754 compliance, use `-O3 -march=native` without `-ffast-math`.
+
+**`mite.alignment-bytes`** — controls how struct fields are laid out in native memory. The default `4` is correct for most workloads. Set to `32` when your C++ code uses AVX2/AVX-512 intrinsics that require 256-bit aligned memory. Mismatched alignment between Java marshalling and C++ struct expectations will cause incorrect reads without any runtime error — if in doubt, leave it at `4`.
+
+---
+
+### Windows / custom compiler path
+
+On Windows with MinGW, or when multiple compiler versions are installed, specify the compiler explicitly:
+
+```properties
+mite.compiler-path=C:/mingw64/bin/g++.exe
+```
+
+On Linux/macOS the compiler is resolved automatically from `PATH` (`g++` preferred, then `clang++`).
 
 ---
 
@@ -273,11 +391,11 @@ public class MiteApplication {
 ```java
 package com.example.semi_mite.client;
 
-import com.mite.annotation.MiteClient;
+import org.example.client.MiteClient;
 import org.example.memory.MiteArray;
 import com.example.semi_mite.dto.CustomDataStructure;
 
-@MiteClient(script = "cppScripts/analytics_processor.cpp")
+@MiteClient
 public interface AnalyticsClient {
 
     float calculate_metrics(float[] coordinates, int totalElements);
@@ -343,6 +461,8 @@ Enable detailed diagnostics using standard Spring Boot logging configuration.
 logging.level.org.example.scanner=DEBUG
 
 logging.level.org.example.parser=TRACE
+
+logging.level.org.example.compiler=DEBUG
 ```
 
 ### Scanner Logs
@@ -443,17 +563,17 @@ Example:
 String baseCppType = cppType.replace("*", "").trim();
 
 if (javaClassName.equals(baseCppType)) {
-    return true;
-}
+        return true;
+        }
 
-if (argClass.isArray()
+        if (argClass.isArray()
         && argClass.getComponentType().getSimpleName().equals(baseCppType)) {
-    return true;
-}
+        return true;
+        }
 
-if (arg instanceof java.util.Collection) {
-    return true;
-}
+        if (arg instanceof java.util.Collection) {
+        return true;
+        }
 ```
 
 Supported mappings:
@@ -467,29 +587,26 @@ Supported mappings:
 
 ---
 
-## D. Native Optimization Pipeline
+## D. Compiler Configuration
 
-Generated libraries are compiled using aggressive optimization flags.
+The framework compiles C++ sources using flags configured via `application.properties`.
 
-Example:
+Default flag: `-O2`
 
-```bash
--shared
--Ofast
--march=native
--mtune=native
--flto=auto
--funroll-loops
--ffast-math
+Recommended configuration for production workloads:
+
+```properties
+mite.compiler-flags=-O3,-march=native,-flto=auto,-DNDEBUG,-Ofast,-fno-plt,-fomit-frame-pointer
 ```
 
-Enabled optimizations include:
+These flags enable:
 
 * Link-Time Optimization (LTO)
-* Loop unrolling
 * CPU-specific instruction generation
-* SIMD optimizations
-* AVX instruction utilization (when available)
+* SIMD and AVX utilisation (when available)
+* Removal of debug overhead
+
+> Performance gains from aggressive flags are workload-dependent. See the benchmark section for measured impact across different computation profiles.
 
 ---
 
