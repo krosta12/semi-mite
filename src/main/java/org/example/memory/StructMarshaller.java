@@ -32,7 +32,7 @@ public class StructMarshaller {
                 long alignment = size;
                 if (alignment > maxAlignment) maxAlignment = alignment;
 
-                currentOffset = (currentOffset + alignment - 1) & ~(alignment - 1);
+                currentOffset = (currentOffset + alignment - 1) & -alignment;
                 long offset = currentOffset;
                 currentOffset += size;
 
@@ -92,7 +92,7 @@ public class StructMarshaller {
                 long alignment = size;
                 if (alignment > maxAlignment) maxAlignment = alignment;
 
-                currentOffset = (currentOffset + alignment - 1) & ~(alignment - 1);
+                currentOffset = (currentOffset + alignment - 1) & -alignment;
                 long offset = currentOffset;
                 currentOffset += size;
 
@@ -108,7 +108,7 @@ public class StructMarshaller {
                     field.set(obj, segment.get(ValueLayout.JAVA_BOOLEAN, offset));
                 } else if (fType == byte.class || fType == Byte.class) {
                     field.set(obj, segment.get(ValueLayout.JAVA_BYTE, offset));
-                } else if (fType == String.class) {
+                } else {
                     MemorySegment addr = segment.get(ValueLayout.ADDRESS, offset);
                     if (addr.address() == 0) {
                         field.set(obj, null);

@@ -47,9 +47,7 @@ public class CppParser {
 
                 String fullSignatureStr = sb.toString().trim();
                 Optional<FunctionSignature> sig = parseSignature(fullSignatureStr);
-                if (sig.isPresent()) {
-                    log.trace("Registered signature: {} -> {}", fullSignatureStr, sig.get());
-                }
+                sig.ifPresent(functionSignature -> log.trace("Registered signature: {} -> {}", fullSignatureStr, functionSignature));
                 sig.ifPresent(result::add);
 
                 i = j - 1;

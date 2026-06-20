@@ -27,11 +27,11 @@ public class StructLayoutCalculator {
             long alignment = size;
             if (alignment > maxAlignment) maxAlignment = alignment;
 
-            currentOffset = (currentOffset + alignment - 1) & ~(alignment - 1);
+            currentOffset = (currentOffset + alignment - 1) & -alignment;
             currentOffset += size;
         }
 
-        long totalSize = (currentOffset + maxAlignment - 1) & ~(maxAlignment - 1);
+        long totalSize = (currentOffset + maxAlignment - 1) & -maxAlignment;
         return totalSize == 0 ? 1 : totalSize;
     }
 }
