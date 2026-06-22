@@ -28,7 +28,6 @@ import java.lang.foreign.MemorySegment;
  * }</pre>
  *
  * @see org.example.memory.MiteArray
- * @see org.example.memory.AbstractMiteArray
  */
 public interface NativeResource extends AutoCloseable {
     /**

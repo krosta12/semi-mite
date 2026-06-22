@@ -555,9 +555,9 @@ public class DefaultCppEngine implements CppEngine {
                 else if (fType == String.class) {
                     MemorySegment strSeg = seg.get(ValueLayout.ADDRESS, offset);
                     if (strSeg.address() != 0) {
-                        MemorySegment safe = strSeg.reinterpret(Long.MAX_VALUE);
+                        MemorySegment safe = strSeg.reinterpret(4096);
                         long len = 0;
-                        while (safe.get(ValueLayout.JAVA_BYTE, len) != 0) len++;
+                        while (len < 4096 && safe.get(ValueLayout.JAVA_BYTE, len) != 0) len++;
                         field.set(obj, new String(safe.asSlice(0, len).toArray(ValueLayout.JAVA_BYTE)));
                     }
                 } else if (!fType.isPrimitive() && !fType.isArray() && !java.util.Collection.class.isAssignableFrom(fType)) {

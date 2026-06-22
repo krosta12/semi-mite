@@ -34,7 +34,7 @@ public class MiteProperties {
      * <p>Resolved relative to the application working directory.
      * Default: {@code cppScripts}
      */
-    private Path cacheDir = Path.of(".mite-cache");
+    private Path scriptsDir = Path.of("cppScripts");
 
     /**
      * Directory where compiled shared libraries ({@code .dll} / {@code .so}) are stored
@@ -43,7 +43,7 @@ public class MiteProperties {
      *
      * <p>Default: {@code .mite-cache}
      */
-    private Path scriptsDir = Path.of("cppScripts");
+    private Path cacheDir = Path.of(".mite-cache");
 
     /**
      * Explicit path to the C++ compiler binary.
