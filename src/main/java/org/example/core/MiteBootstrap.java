@@ -25,7 +25,6 @@ public class MiteBootstrap {
     private final CppSignatureParser signatureParser = new CppSignatureParser();
     private final NativeCompiler nativeCompiler = new NativeCompiler();
     private final NativeLibraryLinker linker = new NativeLibraryLinker();
-    private final MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory();
     private final HotReloadWatcher hotReloadWatcher = new HotReloadWatcher();
 
     public MiteContext start(String basePackage) {
@@ -44,6 +43,7 @@ public class MiteBootstrap {
 
         Map<String, MethodHandle> initialHandles = buildAndLink(config);
         AtomicReference<Map<String, MethodHandle>> handlesRef = new AtomicReference<>(initialHandles);
+        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(config.alignmentBytes());
 
         MiteContext context = new MiteContext();
         for (Class<?> clientInterface : clientRegistry.getClients()) {
