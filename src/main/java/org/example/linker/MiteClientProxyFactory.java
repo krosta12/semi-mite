@@ -8,16 +8,20 @@ import java.lang.invoke.MethodHandle;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.util.Map;
-
+import java.util.function.Supplier;
 
 public class MiteClientProxyFactory {
 
     private final ArrayMarshaller arrayMarshaller = new ArrayMarshaller();
 
-    @SuppressWarnings("unchecked")
     public <T> T create(Class<T> clientInterface, Map<String, MethodHandle> handles) {
+        return create(clientInterface, () -> handles);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T create(Class<T> clientInterface, Supplier<Map<String, MethodHandle>> handlesSupplier) {
         InvocationHandler invocationHandler = (proxy, method, args) -> {
-            MethodHandle handle = handles.get(method.getName());
+            MethodHandle handle = handlesSupplier.get().get(method.getName());
             if (handle == null) {
                 throw new UnsupportedOperationException(
                         "No native binding for method: " + method.getName());

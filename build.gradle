@@ -17,3 +17,11 @@ repositories {
 
 dependencies {
 }
+
+tasks.register('runExample', JavaExec) {
+    group = 'application'
+    description = 'Runs the manual test example (org.example.example.Main)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'org.example.example.Main'
+    jvmArgs = ['--enable-native-access=ALL-UNNAMED']
+}
