@@ -1,11 +1,6 @@
 package org.example.linker;
 
-
-import org.example.memory.ArrayMarshaller;
-import org.example.memory.DeepMarshaller;
-import org.example.memory.DeepUnmarshaller;
-import org.example.memory.MiteArray;
-import org.example.memory.StructLayoutCache;
+import org.example.annotation.MiteStruct;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -13,24 +8,18 @@ import java.lang.invoke.MethodHandle;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 public class MiteClientProxyFactory {
 
-    private final ArrayMarshaller arrayMarshaller = new ArrayMarshaller();
-    private final DeepMarshaller deepMarshaller;
-    private final DeepUnmarshaller deepUnmarshaller;
-
-    public MiteClientProxyFactory() {
-        this(4);
-    }
-
-    public MiteClientProxyFactory(int alignmentBytes) {
-        StructLayoutCache layoutCache = new StructLayoutCache(alignmentBytes);
-        this.deepMarshaller = new DeepMarshaller(layoutCache);
-        this.deepUnmarshaller = new DeepUnmarshaller(layoutCache);
-    }
+    private final NativeMarshaller marshaller = new NativeMarshaller();
+    private final Map<String, Class<?>> structRegistry = new ConcurrentHashMap<>();
 
     public <T> T create(Class<T> clientInterface, Map<String, MethodHandle> handles) {
         return create(clientInterface, () -> handles);
@@ -38,72 +27,86 @@ public class MiteClientProxyFactory {
 
     @SuppressWarnings("unchecked")
     public <T> T create(Class<T> clientInterface, Supplier<Map<String, MethodHandle>> handlesSupplier) {
-        InvocationHandler invocationHandler = (proxy, method, args) -> {
+        InvocationHandler handler = (proxy, method, args) -> {
             MethodHandle handle = handlesSupplier.get().get(method.getName());
             if (handle == null) {
-                throw new UnsupportedOperationException(
-                        "No native binding for method: " + method.getName());
+                throw new UnsupportedOperationException("No native binding for: " + method.getName());
             }
+
             Object[] rawArgs = args == null ? new Object[0] : args;
+            String[] cppTypes = resolveCppTypes(method, rawArgs);
+
+            for (Object arg : rawArgs) {
+                if (arg != null && arg.getClass().isAnnotationPresent(MiteStruct.class)) {
+                    structRegistry.put(arg.getClass().getSimpleName(), arg.getClass());
+                }
+            }
 
             try (Arena callArena = Arena.ofConfined()) {
-                Object[] callArgs = new Object[rawArgs.length];
+                List<Runnable> copyBackTasks = new ArrayList<>();
+                Map<Object, MemorySegment> seen = new IdentityHashMap<>();
+                Map<Long, Object> nativeToJava = new HashMap<>();
+
+                Object[] nativeArgs = new Object[rawArgs.length];
                 for (int i = 0; i < rawArgs.length; i++) {
-                    callArgs[i] = toNativeArg(rawArgs[i], callArena);
+                    nativeArgs[i] = marshaller.marshal(
+                            rawArgs[i], cppTypes[i], callArena, copyBackTasks, seen, nativeToJava);
                 }
+
                 Object result;
                 try {
-                    result = handle.invokeWithArguments(callArgs);
+                    result = handle.invokeWithArguments(nativeArgs);
                 } catch (Throwable t) {
-                    throw new IllegalStateException(
-                            "Native call failed: " + method.getName(), t);
+                    throw new IllegalStateException("Native call failed: " + method.getName(), t);
                 }
-                return toJavaReturn(result, method);
+
+                for (Runnable task : copyBackTasks) {
+                    task.run();
+                }
+
+                return unmarshalReturn(result, method, nativeToJava);
             }
         };
 
         return (T) Proxy.newProxyInstance(
                 clientInterface.getClassLoader(),
                 new Class<?>[]{clientInterface},
-                invocationHandler
+                handler
         );
     }
 
-    private Object toJavaReturn(Object result, Method method) {
-        if (!(result instanceof MemorySegment segment)) {
-            return result;
+
+    private String[] resolveCppTypes(Method method, Object[] args) {
+        String[] types = new String[args.length];
+        Class<?>[] paramTypes = method.getParameterTypes();
+        for (int i = 0; i < args.length; i++) {
+            Class<?> pt = paramTypes[i];
+            if (pt == String.class) {
+                types[i] = "const char*";
+            } else if (pt.isArray() || java.util.Collection.class.isAssignableFrom(pt)) {
+                types[i] = "ptr*";
+            } else if (args[i] != null && args[i].getClass().isAnnotationPresent(MiteStruct.class)) {
+                types[i] = args[i].getClass().getSimpleName() + "*";
+            } else {
+                types[i] = null;
+            }
         }
+        return types;
+    }
+
+    private Object unmarshalReturn(Object result, Method method, Map<Long, Object> nativeToJava) {
         Class<?> returnType = method.getReturnType();
         if (returnType == void.class || returnType == MemorySegment.class) {
             return result;
         }
-        return deepUnmarshaller.unmarshal(segment, returnType);
-    }
-
-    private Object toNativeArg(Object arg, Arena callArena) {
-        if (arg == null) {
-            return MemorySegment.NULL;
+        if (returnType == String.class && result instanceof MemorySegment seg) {
+            return seg.address() == 0 ? null : marshaller.readNullTerminatedString(seg);
         }
-        if (arg instanceof MiteArray miteArray) {
-            return miteArray.segment();
+        if (result instanceof MemorySegment seg && !returnType.isPrimitive()
+                && returnType.isAnnotationPresent(MiteStruct.class)) {
+            return marshaller.unmarshalCustomObject(seg, returnType, nativeToJava);
         }
-        if (arg instanceof float[] floats) {
-            return arrayMarshaller.toSegment(callArena, floats);
-        }
-        if (arg instanceof int[] ints) {
-            return arrayMarshaller.toSegment(callArena, ints);
-        }
-        if (arg instanceof double[] doubles) {
-            return arrayMarshaller.toSegment(callArena, doubles);
-        }
-        if (isBoxedPrimitive(arg)) {
-            return arg;
-        }
-        return deepMarshaller.marshal(arg, callArena);
-    }
-
-    private boolean isBoxedPrimitive(Object arg) {
-        return arg instanceof Number || arg instanceof Boolean || arg instanceof Character;
+        return result;
     }
 
 }

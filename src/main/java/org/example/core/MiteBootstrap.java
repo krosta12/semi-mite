@@ -47,7 +47,7 @@ public class MiteBootstrap {
 
         Map<String, MethodHandle> initialHandles = buildAndLink(config);
         AtomicReference<Map<String, MethodHandle>> handlesRef = new AtomicReference<>(initialHandles);
-        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(config.alignmentBytes());
+        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory();
 
         MiteContext context = new MiteContext();
         for (Class<?> clientInterface : clientRegistry.getClients()) {
