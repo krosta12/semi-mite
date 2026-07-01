@@ -16,6 +16,13 @@ repositories {
 }
 
 dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+    jvmArgs = ['--enable-native-access=ALL-UNNAMED']
 }
 
 tasks.register('runExample', JavaExec) {

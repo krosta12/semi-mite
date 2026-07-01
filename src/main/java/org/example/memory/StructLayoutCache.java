@@ -34,12 +34,27 @@ public class StructLayoutCache {
     private StructLayout buildLayout(Class<?> type) {
         List<Field> fields = fieldsFor(type);
         List<MemoryLayout> members = new ArrayList<>();
+        long offset = 0;
         for (Field field : fields) {
-            MemoryLayout layout = layoutForField(field).withName(field.getName());
-            members.add(layout);
+            MemoryLayout memberLayout = layoutForField(field);
+            long memberAlign = memberLayout.byteAlignment();
+            long remainder = offset % memberAlign;
+            if (remainder != 0) {
+                long padding = memberAlign - remainder;
+                members.add(MemoryLayout.paddingLayout(padding));
+                offset += padding;
+            }
+            members.add(memberLayout.withName(field.getName()));
+            offset += memberLayout.byteSize();
         }
         StructLayout layout = MemoryLayout.structLayout(members.toArray(new MemoryLayout[0]));
-        return alignmentBytes > 0 ? (StructLayout) layout.withByteAlignment(alignmentBytes) : layout;
+        long structAlign = Math.max(alignmentBytes, layout.byteAlignment());
+        long tailRemainder = layout.byteSize() % structAlign;
+        if (tailRemainder != 0) {
+            members.add(MemoryLayout.paddingLayout(structAlign - tailRemainder));
+            layout = MemoryLayout.structLayout(members.toArray(new MemoryLayout[0]));
+        }
+        return (StructLayout) layout.withByteAlignment(structAlign);
     }
 
     private MemoryLayout layoutForField(Field field) {

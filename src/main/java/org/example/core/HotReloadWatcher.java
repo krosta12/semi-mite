@@ -4,6 +4,7 @@ import org.example.compiler.CompilerConfig;
 import org.example.compiler.NativeCompiler;
 import org.example.linker.MiteClientProxyFactory;
 import org.example.linker.NativeLibraryLinker;
+import org.example.linker.NativeLibraryLinker.LinkedLibrary;
 import org.example.parser.CppSignatureParser;
 import org.example.parser.CppSourceScanner;
 import org.example.parser.NativeFunctionSignature;
@@ -14,7 +15,6 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -38,7 +38,7 @@ public class HotReloadWatcher implements AutoCloseable {
     private volatile ScheduledFuture<?> pendingRebuild;
     private volatile boolean running;
 
-    public void start(CompilerConfig config, Consumer<Map<String, MethodHandle>> onRebuild) {
+    public void start(CompilerConfig config, Consumer<LinkedLibrary> onRebuild) {
         if (!Files.isDirectory(config.scriptsDir())) {
             return;
         }
@@ -67,7 +67,7 @@ public class HotReloadWatcher implements AutoCloseable {
         }
     }
 
-    private void watchLoop(CompilerConfig config, Consumer<Map<String, MethodHandle>> onRebuild) {
+    private void watchLoop(CompilerConfig config, Consumer<LinkedLibrary> onRebuild) {
         while (running) {
             WatchKey key;
             try {
@@ -84,14 +84,14 @@ public class HotReloadWatcher implements AutoCloseable {
         }
     }
 
-    private void scheduleDebouncedRebuild(CompilerConfig config, Consumer<Map<String, MethodHandle>> onRebuild) {
+    private void scheduleDebouncedRebuild(CompilerConfig config, Consumer<LinkedLibrary> onRebuild) {
         if (pendingRebuild != null) {
             pendingRebuild.cancel(false);
         }
         pendingRebuild = executor.schedule(() -> rebuild(config, onRebuild), DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS);
     }
 
-    private void rebuild(CompilerConfig config, Consumer<Map<String, MethodHandle>> onRebuild) {
+    private void rebuild(CompilerConfig config, Consumer<LinkedLibrary> onRebuild) {
         try {
             List<Path> sources = sourceScanner.scan(config.scriptsDir());
             List<NativeFunctionSignature> signatures = new ArrayList<>();
@@ -99,10 +99,10 @@ public class HotReloadWatcher implements AutoCloseable {
                 signatures.addAll(signatureParser.parse(source));
             }
             Path library = nativeCompiler.compile(sources, config, "mite-native");
-            Map<String, MethodHandle> handles = linker.link(library, signatures);
-            onRebuild.accept(handles);
+            LinkedLibrary linked = linker.link(library, signatures);
+            onRebuild.accept(linked);
         } catch (Exception e) {
-            System.err.println("[mite] hot reload failed: " + e.getMessage());
+            System.err.println("[MITE] hot reload failed: " + e.getMessage());
         }
     }
 

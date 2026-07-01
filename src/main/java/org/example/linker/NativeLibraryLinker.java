@@ -17,7 +17,14 @@ public class NativeLibraryLinker {
 
     private final FunctionDescriptorBuilder descriptorBuilder = new FunctionDescriptorBuilder();
 
-    public Map<String, MethodHandle> link(Path libraryPath, List<NativeFunctionSignature> signatures) {
+    public record LinkedLibrary(Map<String, MethodHandle> handles, Arena arena) implements AutoCloseable {
+        @Override
+        public void close() {
+            arena.close();
+        }
+    }
+
+    public LinkedLibrary link(Path libraryPath, List<NativeFunctionSignature> signatures) {
         Arena arena = Arena.ofShared();
         SymbolLookup lookup = SymbolLookup.libraryLookup(libraryPath, arena);
         Linker linker = Linker.nativeLinker();
@@ -31,7 +38,7 @@ public class NativeLibraryLinker {
             MethodHandle handle = linker.downcallHandle(symbol, descriptor);
             handles.put(signature.name(), handle);
         }
-        return handles;
+        return new LinkedLibrary(handles, arena);
     }
 
 }
