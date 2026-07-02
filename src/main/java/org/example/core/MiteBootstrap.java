@@ -17,7 +17,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 
@@ -29,7 +28,6 @@ public class MiteBootstrap {
     private final NativeCompiler nativeCompiler = new NativeCompiler();
     private final NativeLibraryLinker linker = new NativeLibraryLinker();
     private final HotReloadWatcher hotReloadWatcher = new HotReloadWatcher();
-    private final List<LinkedLibrary> linkedLibraries = new CopyOnWriteArrayList<>();
 
     public MiteContext start(String basePackage) {
         return start(basePackage, CompilerConfig.defaults(), false);
@@ -41,50 +39,42 @@ public class MiteBootstrap {
 
     public MiteContext start(String basePackage, CompilerConfig config, boolean enableHotReload) {
         MiteClientRegistry clientRegistry = clientScanner.scan(basePackage);
+        MiteContext context = new MiteContext();
         if (clientRegistry.getClients().isEmpty()) {
-            return new MiteContext();
+            return context;
         }
 
-        Map<String, MethodHandle> initialHandles = buildAndLink(config);
-        AtomicReference<Map<String, MethodHandle>> handlesRef = new AtomicReference<>(initialHandles);
+        LinkedLibrary initial = buildAndLink(config);
+        context.addLibrary(initial);
+
+        AtomicReference<Map<String, MethodHandle>> handlesRef = new AtomicReference<>(initial.handles());
         MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory();
 
-        MiteContext context = new MiteContext();
         for (Class<?> clientInterface : clientRegistry.getClients()) {
-            Object proxy = proxyFactory.create(clientInterface, handlesRef::get);
-            context.put(clientInterface, proxy);
+            context.put(clientInterface, proxyFactory.create(clientInterface, handlesRef::get));
         }
 
         if (enableHotReload) {
-            hotReloadWatcher.start(config, newHandles -> {
-                handlesRef.set(newHandles.handles());
-                linkedLibraries.add(newHandles);
+            hotReloadWatcher.start(config, newLib -> {
+                context.addLibrary(newLib);
+                handlesRef.set(newLib.handles());
             });
         }
         return context;
     }
 
-    private Map<String, MethodHandle> buildAndLink(CompilerConfig config) {
+    private LinkedLibrary buildAndLink(CompilerConfig config) {
         List<Path> sources = cppSourceScanner.scan(config.scriptsDir());
         List<NativeFunctionSignature> signatures = new ArrayList<>();
         for (Path source : sources) {
             signatures.addAll(signatureParser.parse(source));
         }
         Path library = nativeCompiler.compile(sources, config, "mite-native");
-        LinkedLibrary linked = linker.link(library, signatures);
-        linkedLibraries.add(linked);
-        return linked.handles();
+        return linker.link(library, signatures);
     }
 
     public void close() {
         hotReloadWatcher.close();
-        for (LinkedLibrary lib : linkedLibraries) {
-            try {
-                lib.close();
-            } catch (Exception ignored) {
-            }
-        }
-        linkedLibraries.clear();
     }
 
 }

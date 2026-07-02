@@ -1,11 +1,19 @@
 package org.example.core;
 
+import org.example.linker.NativeLibraryLinker.LinkedLibrary;
+import org.example.memory.MiteArray;
+
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-public class MiteContext {
+public class MiteContext implements AutoCloseable {
 
     private final Map<Class<?>, Object> instances = new HashMap<>();
+    private final List<LinkedLibrary> libraries = new ArrayList<>();
+    private final List<MiteArray> arrays = new ArrayList<>();
+    private volatile boolean closed = false;
 
     public void put(Class<?> clientInterface, Object instance) {
         instances.put(clientInterface, instance);
@@ -18,6 +26,33 @@ public class MiteContext {
             throw new IllegalStateException("No client registered for: " + clientInterface.getName());
         }
         return (T) instance;
+    }
+
+    public MiteArray track(MiteArray array) {
+        arrays.add(array);
+        return array;
+    }
+
+    void addLibrary(LinkedLibrary library) {
+        libraries.add(library);
+    }
+
+    @Override
+    public void close() {
+        if (closed) return;
+        closed = true;
+        for (MiteArray array : arrays) {
+            try { array.close(); } catch (Exception ignored) {}
+        }
+        for (LinkedLibrary lib : libraries) {
+            try { lib.close(); } catch (Exception ignored) {}
+        }
+        arrays.clear();
+        libraries.clear();
+    }
+
+    public boolean isClosed() {
+        return closed;
     }
 
 }
