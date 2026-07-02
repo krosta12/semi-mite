@@ -54,8 +54,7 @@ class MiteBootstrapIntegrationTest {
         );
 
         MiteBootstrap bootstrap = new MiteBootstrap();
-        try {
-            MiteContext context = bootstrap.start("org.example.core", config);
+        try (MiteContext context = bootstrap.start("org.example.core", config)) {
             CalcClient client = context.get(CalcClient.class);
 
             assertEquals(7, client.add(3, 4));
