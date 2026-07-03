@@ -27,7 +27,9 @@ public class NativeCompiler {
         List<String> command = new ArrayList<>();
         command.add(compiler);
         command.add("-shared");
-        command.add("-fPIC");
+        if (!isWindows()) {
+            command.add("-fPIC");
+        }
         command.addAll(config.compilerFlags());
         for (Path source : sources) {
             command.add(source.toString());
@@ -57,14 +59,13 @@ public class NativeCompiler {
         }
     }
 
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
     private String libraryExtension() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win")) {
-            return ".dll";
-        }
-        if (os.contains("mac")) {
-            return ".dylib";
-        }
+        if (isWindows()) return ".dll";
+        if (System.getProperty("os.name", "").toLowerCase().contains("mac")) return ".dylib";
         return ".so";
     }
 

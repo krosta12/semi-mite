@@ -86,7 +86,9 @@ public class MiteBuilder {
 
     public MiteContext start() {
         MiteBootstrap bootstrap = new MiteBootstrap();
-        return bootstrap.start(basePackage, config, hotReload);
+        MiteContext context = bootstrap.start(basePackage, config, hotReload);
+        context.setBootstrap(bootstrap);
+        return context;
     }
 
 }

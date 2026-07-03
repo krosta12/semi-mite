@@ -12,8 +12,13 @@ public class MiteContext implements AutoCloseable {
 
     private final Map<Class<?>, Object> instances = new HashMap<>();
     private final List<LinkedLibrary> libraries = new ArrayList<>();
-    private final List<MiteArray> arrays = new ArrayList<>();
+    private final List<MiteArray<?>> arrays = new ArrayList<>();
+    private MiteBootstrap bootstrap;
     private volatile boolean closed = false;
+
+    void setBootstrap(MiteBootstrap bootstrap) {
+        this.bootstrap = bootstrap;
+    }
 
     public void put(Class<?> clientInterface, Object instance) {
         instances.put(clientInterface, instance);
@@ -28,7 +33,7 @@ public class MiteContext implements AutoCloseable {
         return (T) instance;
     }
 
-    public MiteArray track(MiteArray array) {
+    public <T> MiteArray<T> track(MiteArray<T> array) {
         arrays.add(array);
         return array;
     }
@@ -42,10 +47,22 @@ public class MiteContext implements AutoCloseable {
         if (closed) return;
         closed = true;
         for (MiteArray array : arrays) {
-            try { array.close(); } catch (Exception ignored) {}
+            try {
+                array.close();
+            } catch (Exception ignored) {
+            }
         }
         for (LinkedLibrary lib : libraries) {
-            try { lib.close(); } catch (Exception ignored) {}
+            try {
+                lib.close();
+            } catch (Exception ignored) {
+            }
+        }
+        if (bootstrap != null) {
+            try {
+                bootstrap.close();
+            } catch (Exception ignored) {
+            }
         }
         arrays.clear();
         libraries.clear();

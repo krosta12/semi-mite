@@ -2,6 +2,7 @@ package org.example.example;
 
 import org.example.core.Mite;
 import org.example.core.MiteContext;
+import org.example.memory.MiteArray;
 
 public class Main {
 
@@ -11,13 +12,10 @@ public class Main {
                 .withHotReload()
                 .start()) {
 
-            MathClient client = context.get(MathClient.class);
-            System.out.println("add(2, 3) = " + client.add(2, 3));
-            System.out.println("sum([1,2,3]) = " + client.sum(new float[]{1f, 2f, 3f}, 3));
+            MiteArray<Float> array = MiteArray.ofFloats(1000);
 
-            context.close();
-
-            System.out.println("closed");
+            array.set(1, 43f);
+            array.close();
         }
     }
 

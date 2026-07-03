@@ -53,7 +53,7 @@ class MiteContextTest {
     @Test
     void trackedArrayIsClosedWithContext() {
         MiteContext ctx = new MiteContext();
-        MiteArray arr = MiteArray.allocate(4);
+        MiteArray arr = MiteArray.ofInts(4);
         ctx.track(arr);
 
         ctx.close();
@@ -65,7 +65,7 @@ class MiteContextTest {
     @Test
     void trackReturnsTheSameArray() {
         MiteContext ctx = new MiteContext();
-        MiteArray arr = MiteArray.allocate(1);
+        MiteArray arr = MiteArray.ofInts(1);
         MiteArray returned = ctx.track(arr);
 
         assertSame(arr, returned);

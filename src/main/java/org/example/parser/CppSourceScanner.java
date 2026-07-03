@@ -16,7 +16,9 @@ public class CppSourceScanner {
         }
         List<Path> result = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(scriptsDir)) {
-            walk.filter(p -> p.toString().endsWith(".cpp")).forEach(result::add);
+            walk.filter(p -> p.toString().endsWith(".cpp"))
+                    .sorted()
+                    .forEach(result::add);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

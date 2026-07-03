@@ -2,7 +2,6 @@ package org.example.core;
 
 import org.example.compiler.CompilerConfig;
 import org.example.compiler.NativeCompiler;
-import org.example.linker.MiteClientProxyFactory;
 import org.example.linker.NativeLibraryLinker;
 import org.example.linker.NativeLibraryLinker.LinkedLibrary;
 import org.example.parser.CppSignatureParser;
@@ -11,7 +10,6 @@ import org.example.parser.NativeFunctionSignature;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.invoke.MethodHandle;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
