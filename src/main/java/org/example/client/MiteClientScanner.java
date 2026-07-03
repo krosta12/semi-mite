@@ -29,12 +29,24 @@ public class MiteClientScanner {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         try {
             Enumeration<URL> resources = classLoader.getResources(path);
+            boolean found = false;
             while (resources.hasMoreElements()) {
+                found = true;
                 URL resource = resources.nextElement();
                 if ("jar".equals(resource.getProtocol())) {
                     scanJar(resource, path, result);
                 } else {
                     scanDirectory(new File(resource.toURI()), basePackage, result);
+                }
+            }
+
+            if (!found) {
+                Enumeration<URL> roots = classLoader.getResources("");
+                while (roots.hasMoreElements()) {
+                    URL root = roots.nextElement();
+                    if ("jar".equals(root.getProtocol())) {
+                        scanJar(root, path, result);
+                    }
                 }
             }
         } catch (IOException | URISyntaxException e) {

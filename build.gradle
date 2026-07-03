@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
 
 group = 'org.example'
@@ -31,4 +32,12 @@ tasks.register('runExample', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'org.example.example.Main'
     jvmArgs = ['--enable-native-access=ALL-UNNAMED']
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
 }
