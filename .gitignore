@@ -57,3 +57,11 @@ bin/
 *.dylib
 
 Thumbs.db
+
+cppScripts/
+
+*.jar
+*.war
+*.ear
+
+local.properties
