@@ -1,10 +1,10 @@
 package org.example.compiler;
 
-class OsUtil {
+public class OsUtil {
 
     private OsUtil() {}
 
-    static boolean isWindows() {
+    public static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
