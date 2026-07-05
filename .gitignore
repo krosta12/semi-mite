@@ -40,3 +40,20 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+
+
+.idea/
+
+.gradle/
+
+.mite-cache/
+
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+Thumbs.db
