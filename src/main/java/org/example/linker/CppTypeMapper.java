@@ -34,7 +34,8 @@ public class CppTypeMapper {
     }
 
     public boolean isVoid(String cppType) {
-        return normalize(cppType).equals("void") && !isPointer(normalize(cppType));
+        String normalize = normalize(cppType);
+        return normalize.equals("void") && !isPointer(normalize);
     }
 
     public boolean isPointer(String cppType) {

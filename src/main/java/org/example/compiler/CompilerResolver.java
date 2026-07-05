@@ -20,21 +20,17 @@ public class CompilerResolver {
                 return candidate;
             }
         }
-        throw new IllegalStateException("Native compiler doesnt found on PATH (tried: " + CANDIDATES + ")");
+        throw new IllegalStateException("Native compiler doesn't found on PATH (tried: " + CANDIDATES + ")");
     }
 
     private boolean isOnPath(String binary, String path) {
-        String exe = isWindows() ? binary + ".exe" : binary;
+        String exe = OsUtil.isWindows() ? binary + ".exe" : binary;
         for (String dir : path.split(File.pathSeparator)) {
             if (new File(dir, exe).isFile()) {
                 return true;
             }
         }
         return false;
-    }
-
-    private boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
 }

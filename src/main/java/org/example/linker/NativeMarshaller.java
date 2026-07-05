@@ -10,10 +10,8 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-
 
 public class NativeMarshaller {
 
@@ -22,7 +20,7 @@ public class NativeMarshaller {
                           List<Runnable> copyBackTasks,
                           Map<Object, MemorySegment> seen,
                           Map<Long, Object> nativeToJava) {
-        if (arg instanceof MiteArray ma) {
+        if (arg instanceof MiteArray<?> ma) {
             return ma.segment();
         }
         if ("const char*".equals(cppType) || "std::string".equals(cppType)) {
@@ -32,44 +30,20 @@ public class NativeMarshaller {
             return arena.allocateFrom((String) arg);
         }
         if (cppType != null && cppType.endsWith("*")) {
-            return marshalPointerArg(arg, cppType, arena, copyBackTasks, seen, nativeToJava);
+            return marshalPointerArg(arg, arena, copyBackTasks, seen, nativeToJava);
         }
-
         return arg;
     }
 
-    public Object unmarshal(Object result, String returnType,
-                            Map<Long, Object> nativeToJava,
-                            Map<String, Class<?>> structRegistry) {
-        if (!(result instanceof MemorySegment seg)) {
-            return result;
-        }
-        if (seg.address() == 0) {
-            return null;
-        }
-        if ("const char*".equals(returnType) || "std::string".equals(returnType)) {
-            return readNullTerminatedString(seg);
-        }
-        if (returnType != null && returnType.endsWith("*")) {
-            String cleanType = returnType.replace("*", "").trim();
-            Class<?> targetClass = structRegistry.get(cleanType);
-            if (targetClass != null) {
-                return unmarshalCustomObject(seg, targetClass, nativeToJava);
-            }
-        }
-        return result;
-    }
 
-
-    @SuppressWarnings("unchecked")
-    private Object marshalPointerArg(Object arg, String cppType, Arena arena,
+    private Object marshalPointerArg(Object arg, Arena arena,
                                      List<Runnable> copyBackTasks,
                                      Map<Object, MemorySegment> seen,
                                      Map<Long, Object> nativeToJava) {
         if (arg == null) return MemorySegment.NULL;
 
         return switch (arg) {
-            case Collection<?> col -> allocateNativeCollection(col, cppType, arena, copyBackTasks, seen, nativeToJava);
+            case Collection<?> col -> allocateNativeCollection(col, arena, copyBackTasks, seen, nativeToJava);
             case float[] arr -> {
                 MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_FLOAT, arr);
                 copyBackTasks.add(() -> MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 0, arr, 0, arr.length));
@@ -121,57 +95,91 @@ public class NativeMarshaller {
         };
     }
 
-    @SuppressWarnings("unchecked")
-    private MemorySegment allocateNativeCollection(Collection<?> col, String cppType, Arena arena,
+    private MemorySegment allocateNativeCollection(Collection<?> col, Arena arena,
                                                    List<Runnable> copyBackTasks,
                                                    Map<Object, MemorySegment> seen,
                                                    Map<Long, Object> nativeToJava) {
         if (col.isEmpty()) return MemorySegment.NULL;
 
         Object first = col.iterator().next();
+        Object[] snapshot = col.toArray();
 
         if (first instanceof Float) {
-            float[] arr = new float[col.size()];
-            int i = 0;
-            for (Object x : col) arr[i++] = ((Number) x).floatValue();
+            float[] arr = new float[snapshot.length];
+            for (int i = 0; i < snapshot.length; i++) arr[i] = ((Number) snapshot[i]).floatValue();
             MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_FLOAT, arr);
-            if (col instanceof List<?> list) {
-                copyBackTasks.add(() -> {
-                    for (int k = 0; k < arr.length; k++) {
-                        ((List<Float>) list).set(k, seg.getAtIndex(ValueLayout.JAVA_FLOAT, k));
-                    }
-                });
-            }
+            copyBackTasks.add(() -> writeBackNumeric(col, snapshot.length,
+                    k -> seg.getAtIndex(ValueLayout.JAVA_FLOAT, k)));
             return seg;
         }
         if (first instanceof Integer) {
-            int[] arr = col.stream().mapToInt(x -> ((Number) x).intValue()).toArray();
+            int[] arr = new int[snapshot.length];
+            for (int i = 0; i < snapshot.length; i++) arr[i] = ((Number) snapshot[i]).intValue();
             MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_INT, arr);
-            if (col instanceof List<?> list) {
-                copyBackTasks.add(() -> {
-                    for (int k = 0; k < arr.length; k++) {
-                        ((List<Integer>) list).set(k, seg.getAtIndex(ValueLayout.JAVA_INT, k));
-                    }
-                });
-            }
+            copyBackTasks.add(() -> writeBackNumeric(col, snapshot.length,
+                    k -> seg.getAtIndex(ValueLayout.JAVA_INT, k)));
             return seg;
         }
         if (first instanceof Long) {
-            long[] arr = col.stream().mapToLong(x -> ((Number) x).longValue()).toArray();
-            return arena.allocateFrom(ValueLayout.JAVA_LONG, arr);
+            long[] arr = new long[snapshot.length];
+            for (int i = 0; i < snapshot.length; i++) arr[i] = ((Number) snapshot[i]).longValue();
+            MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_LONG, arr);
+            copyBackTasks.add(() -> writeBackNumeric(col, snapshot.length,
+                    k -> seg.getAtIndex(ValueLayout.JAVA_LONG, k)));
+            return seg;
         }
         if (first instanceof Double) {
-            double[] arr = col.stream().mapToDouble(x -> ((Number) x).doubleValue()).toArray();
-            return arena.allocateFrom(ValueLayout.JAVA_DOUBLE, arr);
+            double[] arr = new double[snapshot.length];
+            for (int i = 0; i < snapshot.length; i++) arr[i] = ((Number) snapshot[i]).doubleValue();
+            MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_DOUBLE, arr);
+            copyBackTasks.add(() -> writeBackNumeric(col, snapshot.length,
+                    k -> seg.getAtIndex(ValueLayout.JAVA_DOUBLE, k)));
+            return seg;
+        }
+        if (first instanceof Short) {
+            short[] arr = new short[snapshot.length];
+            for (int i = 0; i < snapshot.length; i++) arr[i] = ((Number) snapshot[i]).shortValue();
+            MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_SHORT, arr);
+            copyBackTasks.add(() -> writeBackNumeric(col, snapshot.length,
+                    k -> seg.getAtIndex(ValueLayout.JAVA_SHORT, k)));
+            return seg;
+        }
+        if (first instanceof Byte) {
+            byte[] arr = new byte[snapshot.length];
+            for (int i = 0; i < snapshot.length; i++) arr[i] = ((Number) snapshot[i]).byteValue();
+            MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, arr);
+            copyBackTasks.add(() -> writeBackNumeric(col, snapshot.length,
+                    k -> seg.getAtIndex(ValueLayout.JAVA_BYTE, k)));
+            return seg;
         }
 
-        MemorySegment ptrArray = arena.allocate(ValueLayout.ADDRESS, col.size());
-        int idx = 0;
-        for (Object item : col) {
-            ptrArray.setAtIndex(ValueLayout.ADDRESS, idx++,
-                    marshalCustomObject(item, arena, copyBackTasks, seen, nativeToJava));
+        MemorySegment ptrArray = arena.allocate(ValueLayout.ADDRESS, snapshot.length);
+        for (int i = 0; i < snapshot.length; i++) {
+            ptrArray.setAtIndex(ValueLayout.ADDRESS, i,
+                    marshalCustomObject(snapshot[i], arena, copyBackTasks, seen, nativeToJava));
         }
         return ptrArray;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void writeBackNumeric(Collection col, int length,
+                                  java.util.function.IntFunction<Object> reader) {
+        if (col instanceof List<?> list) {
+            try {
+                for (int k = 0; k < length; k++) {
+                    ((List<Object>) list).set(k, reader.apply(k));
+                }
+            } catch (UnsupportedOperationException ignored) {
+            }
+        } else {
+            try {
+                col.clear();
+                for (int k = 0; k < length; k++) {
+                    col.add(reader.apply(k));
+                }
+            } catch (UnsupportedOperationException ignored) {
+            }
+        }
     }
 
     MemorySegment marshalCustomObject(Object obj, Arena arena,
@@ -184,7 +192,7 @@ public class NativeMarshaller {
         if (!obj.getClass().isAnnotationPresent(MiteStruct.class)) {
             throw new IllegalArgumentException(
                     "Security Violation: " + obj.getClass().getName() +
-                            " must be anotated with @MiteStruct to be passed to native code.");
+                            " must be annotated with @MiteStruct to be passed to native code.");
         }
 
         try {
@@ -213,7 +221,6 @@ public class NativeMarshaller {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void writeFields(Object obj, Field[] fields, Map<Field, Long> offsets,
                              MemorySegment seg, Arena arena,
                              List<Runnable> copyBackTasks,
@@ -295,7 +302,7 @@ public class NativeMarshaller {
                 seg.set(ValueLayout.ADDRESS, offset, sub);
             } else if (val instanceof Collection<?> col) {
                 seg.set(ValueLayout.ADDRESS, offset,
-                        allocateNativeCollection(col, null, arena, copyBackTasks, seen, nativeToJava));
+                        allocateNativeCollection(col, arena, copyBackTasks, seen, nativeToJava));
             } else {
                 seg.set(ValueLayout.ADDRESS, offset,
                         marshalCustomObject(val, arena, copyBackTasks, seen, nativeToJava));
@@ -360,12 +367,14 @@ public class NativeMarshaller {
     }
 
     String readNullTerminatedString(MemorySegment seg) {
-        MemorySegment safe = seg.reinterpret(4096);
+        long maxLen = seg.byteSize() == 0 ? MAX_STRING_BYTES : Math.min(seg.byteSize(), MAX_STRING_BYTES);
+        MemorySegment safe = seg.byteSize() > 0 ? seg : seg.reinterpret(MAX_STRING_BYTES);
         long len = 0;
-        while (len < 4096 && safe.get(ValueLayout.JAVA_BYTE, len) != 0) len++;
-        return new String(safe.asSlice(0, len).toArray(ValueLayout.JAVA_BYTE));
+        while (len < maxLen && safe.get(ValueLayout.JAVA_BYTE, len) != 0) len++;
+        return new String(safe.asSlice(0, len).toArray(ValueLayout.JAVA_BYTE), java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    private static final long MAX_STRING_BYTES = 65536;
 
     record FieldLayout(Map<Field, Long> offsets, long totalSize, long maxAlignment) {
     }
@@ -377,12 +386,11 @@ public class NativeMarshaller {
 
         for (Field field : fields) {
             Class<?> fType = field.getType();
-            long size = fieldSize(fType);
-            long align = size;
+            long align = fieldSize(fType);
             if (align > maxAlign) maxAlign = align;
             offset = (offset + align - 1) & -align;
             offsets.put(field, offset);
-            offset += size;
+            offset += align;
         }
 
         long total = (offset + maxAlign - 1) & -maxAlign;

@@ -9,8 +9,10 @@ public class Main {
     public static void main(String[] args) {
         try (MiteContext context = Mite.scan("org.example.example")
                 .withFlag("-O3")
+                .withFlag("-flto")
                 .withHotReload()
                 .start()) {
+
 
             MiteArray<Float> array = MiteArray.ofFloats(1000);
 

@@ -46,7 +46,7 @@ public class MiteContext implements AutoCloseable {
     public void close() {
         if (closed) return;
         closed = true;
-        for (MiteArray array : arrays) {
+        for (MiteArray<?> array : arrays) {
             try {
                 array.close();
             } catch (Exception ignored) {

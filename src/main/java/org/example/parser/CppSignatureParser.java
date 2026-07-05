@@ -66,14 +66,14 @@ public class CppSignatureParser {
         if (lastSpace < 0) {
             return new NativeFunctionSignature.NativeParam(param, "");
         }
-        String type = param.substring(0, lastSpace).trim();
+        StringBuilder type = new StringBuilder(param.substring(0, lastSpace).trim());
         String name = param.substring(lastSpace + 1).trim();
 
         while (name.startsWith("*")) {
-            type = type + "*";
+            type.append("*");
             name = name.substring(1);
         }
-        return new NativeFunctionSignature.NativeParam(type, name);
+        return new NativeFunctionSignature.NativeParam(type.toString(), name);
     }
 
 }

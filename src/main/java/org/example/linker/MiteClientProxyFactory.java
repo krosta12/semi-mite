@@ -13,13 +13,11 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 public class MiteClientProxyFactory {
 
     private final NativeMarshaller marshaller = new NativeMarshaller();
-    private final Map<String, Class<?>> structRegistry = new ConcurrentHashMap<>();
 
     public <T> T create(Class<T> clientInterface, Map<String, MethodHandle> handles) {
         return create(clientInterface, () -> handles);
@@ -35,12 +33,6 @@ public class MiteClientProxyFactory {
 
             Object[] rawArgs = args == null ? new Object[0] : args;
             String[] cppTypes = resolveCppTypes(method, rawArgs);
-
-            for (Object arg : rawArgs) {
-                if (arg != null && arg.getClass().isAnnotationPresent(MiteStruct.class)) {
-                    structRegistry.put(arg.getClass().getSimpleName(), arg.getClass());
-                }
-            }
 
             try (Arena callArena = Arena.ofConfined()) {
                 List<Runnable> copyBackTasks = new ArrayList<>();

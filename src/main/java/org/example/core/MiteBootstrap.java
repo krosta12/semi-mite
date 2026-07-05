@@ -48,6 +48,7 @@ public class MiteBootstrap {
         context.addLibrary(initial);
 
         AtomicReference<Map<String, MethodHandle>> handlesRef = new AtomicReference<>(initial.handles());
+        AtomicReference<LinkedLibrary> currentLib = new AtomicReference<>(initial);
         MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory();
 
         for (Class<?> clientInterface : clientRegistry.getClients()) {
@@ -56,8 +57,10 @@ public class MiteBootstrap {
 
         if (enableHotReload) {
             hotReloadWatcher.start(config, newLib -> {
-                context.addLibrary(newLib);
+                LinkedLibrary old = currentLib.getAndSet(newLib);
                 handlesRef.set(newLib.handles());
+                context.addLibrary(newLib);
+                try { old.close(); } catch (Exception ignored) {}
             });
         }
         return context;
