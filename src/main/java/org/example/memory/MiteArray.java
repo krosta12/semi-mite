@@ -74,7 +74,7 @@ public class MiteArray<T> implements AutoCloseable {
                     return new String(ptr.asSlice(0, len).toArray(ValueLayout.JAVA_BYTE));
                 },
                 (seg, i, v) -> {
-                    throw new UnsupportedOperationException("Use ofStrings() factory to set strings");
+                    throw new UnsupportedOperationException("MiteArray<String> is immutable after construction. Create a new MiteArray.ofStrings(...) with the desired values.");
                 });
         for (int i = 0; i < strings.length; i++) {
             arr.segment.setAtIndex(ValueLayout.ADDRESS, i, arr.arena.allocateFrom(strings[i]));

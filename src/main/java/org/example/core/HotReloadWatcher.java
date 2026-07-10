@@ -27,14 +27,16 @@ public class HotReloadWatcher implements AutoCloseable {
     private final NativeLibraryLinker linker = new NativeLibraryLinker();
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "mite-hot-reload");
+        Thread t = new Thread(r, "mite-hot-reload-rebuild");
         t.setDaemon(true);
         return t;
     });
 
+    private Thread watchThread;
     private WatchService watchService;
     private volatile ScheduledFuture<?> pendingRebuild;
     private volatile boolean running;
+    private final java.util.concurrent.atomic.AtomicLong buildCounter = new java.util.concurrent.atomic.AtomicLong();
 
     public void start(CompilerConfig config, Consumer<LinkedLibrary> onRebuild) {
         if (!Files.isDirectory(config.scriptsDir())) {
@@ -47,7 +49,9 @@ public class HotReloadWatcher implements AutoCloseable {
             throw new UncheckedIOException(e);
         }
         running = true;
-        executor.submit(() -> watchLoop(config, onRebuild));
+        watchThread = new Thread(() -> watchLoop(config, onRebuild), "mite-hot-reload-watch");
+        watchThread.setDaemon(true);
+        watchThread.start();
     }
 
     private void registerAll(Path root) throws IOException {
@@ -76,9 +80,35 @@ public class HotReloadWatcher implements AutoCloseable {
             } catch (ClosedWatchServiceException e) {
                 return;
             }
-            key.pollEvents();
+
+            Path watchedDir = (Path) key.watchable();
+            boolean hasRelevantChange = false;
+
+            for (WatchEvent<?> event : key.pollEvents()) {
+                WatchEvent.Kind<?> kind = event.kind();
+                if (kind == StandardWatchEventKinds.OVERFLOW) {
+                    hasRelevantChange = true;
+                    continue;
+                }
+
+                @SuppressWarnings("unchecked")
+                Path child = watchedDir.resolve(((WatchEvent<Path>) event).context());
+
+                if (kind == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(child)) {
+                    try {
+                        registerAll(child);
+                    } catch (IOException e) {
+                        System.err.println("[MITE] failed watching new directory: " + child + " - " + e.getMessage());
+                    }
+                }
+                hasRelevantChange = true;
+            }
+
             key.reset();
-            scheduleDebouncedRebuild(config, onRebuild);
+
+            if (hasRelevantChange) {
+                scheduleDebouncedRebuild(config, onRebuild);
+            }
         }
     }
 
@@ -96,7 +126,8 @@ public class HotReloadWatcher implements AutoCloseable {
             for (Path source : sources) {
                 signatures.addAll(signatureParser.parse(source));
             }
-            Path library = nativeCompiler.compile(sources, config, "mite-native");
+            String libraryName = "mite-native-" + buildCounter.incrementAndGet();
+            Path library = nativeCompiler.compile(sources, config, libraryName);
             LinkedLibrary linked = linker.link(library, signatures);
             onRebuild.accept(linked);
         } catch (Exception e) {
@@ -108,6 +139,9 @@ public class HotReloadWatcher implements AutoCloseable {
     public void close() {
         running = false;
         executor.shutdownNow();
+        if (watchThread != null) {
+            watchThread.interrupt();
+        }
         try {
             if (watchService != null) {
                 watchService.close();

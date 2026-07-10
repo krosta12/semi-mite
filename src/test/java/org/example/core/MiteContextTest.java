@@ -7,15 +7,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MiteContextTest {
 
-    interface FakeClient {}
+    interface FakeClient {
+    }
 
     @Test
     void putAndGetRoundTrip() {
         MiteContext ctx = new MiteContext();
-        FakeClient instance = new FakeClient() {};
+        FakeClient instance = new FakeClient() {
+        };
         ctx.put(FakeClient.class, instance);
 
         assertSame(instance, ctx.get(FakeClient.class));
+
+        ctx.close();
     }
 
     @Test
@@ -23,6 +27,8 @@ class MiteContextTest {
         MiteContext ctx = new MiteContext();
 
         assertThrows(IllegalStateException.class, () -> ctx.get(FakeClient.class));
+
+        ctx.close();
     }
 
     @Test
@@ -33,6 +39,8 @@ class MiteContextTest {
             ctx.close();
             ctx.close();
         });
+
+        ctx.close();
     }
 
     @Test
@@ -53,7 +61,7 @@ class MiteContextTest {
     @Test
     void trackedArrayIsClosedWithContext() {
         MiteContext ctx = new MiteContext();
-        MiteArray arr = MiteArray.ofInts(4);
+        MiteArray<Integer> arr = MiteArray.ofInts(4);
         ctx.track(arr);
 
         ctx.close();
@@ -65,8 +73,8 @@ class MiteContextTest {
     @Test
     void trackReturnsTheSameArray() {
         MiteContext ctx = new MiteContext();
-        MiteArray arr = MiteArray.ofInts(1);
-        MiteArray returned = ctx.track(arr);
+        MiteArray<Integer> arr = MiteArray.ofInts(1);
+        MiteArray<Integer> returned = ctx.track(arr);
 
         assertSame(arr, returned);
         ctx.close();

@@ -79,6 +79,17 @@ public class MiteBuilder {
         return this;
     }
 
+    public MiteBuilder withAlignment(int alignmentBytes) {
+        this.config = new CompilerConfig(
+                config.scriptsDir(),
+                config.cacheDir(),
+                config.compilerPath(),
+                config.compilerFlags(),
+                alignmentBytes
+        );
+        return this;
+    }
+
     public MiteBuilder withHotReload() {
         this.hotReload = true;
         return this;

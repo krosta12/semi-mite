@@ -17,46 +17,63 @@ import java.util.function.Supplier;
 
 public class MiteClientProxyFactory {
 
-    private final NativeMarshaller marshaller = new NativeMarshaller();
+    private final NativeMarshaller marshaller;
 
-    public <T> T create(Class<T> clientInterface, Map<String, MethodHandle> handles) {
-        return create(clientInterface, () -> handles);
+    public MiteClientProxyFactory() {
+        this.marshaller = new NativeMarshaller();
+    }
+
+    public MiteClientProxyFactory(int pointerSize) {
+        this.marshaller = new NativeMarshaller(pointerSize);
+    }
+
+    public <T> T create(Class<T> clientInterface, ManagedLibrary library) {
+        return create(clientInterface, () -> library);
     }
 
     @SuppressWarnings("unchecked")
-    public <T> T create(Class<T> clientInterface, Supplier<Map<String, MethodHandle>> handlesSupplier) {
+    public <T> T create(Class<T> clientInterface, Supplier<ManagedLibrary> librarySupplier) {
         InvocationHandler handler = (proxy, method, args) -> {
-            MethodHandle handle = handlesSupplier.get().get(method.getName());
-            if (handle == null) {
-                throw new UnsupportedOperationException("No native binding for: " + method.getName());
+            ManagedLibrary library = librarySupplier.get();
+            if (!library.acquire()) {
+                throw new IllegalStateException(
+                        "Native library is being reloaded, retry call: " + method.getName());
             }
-
-            Object[] rawArgs = args == null ? new Object[0] : args;
-            String[] cppTypes = resolveCppTypes(method, rawArgs);
-
-            try (Arena callArena = Arena.ofConfined()) {
-                List<Runnable> copyBackTasks = new ArrayList<>();
-                Map<Object, MemorySegment> seen = new IdentityHashMap<>();
-                Map<Long, Object> nativeToJava = new HashMap<>();
-
-                Object[] nativeArgs = new Object[rawArgs.length];
-                for (int i = 0; i < rawArgs.length; i++) {
-                    nativeArgs[i] = marshaller.marshal(
-                            rawArgs[i], cppTypes[i], callArena, copyBackTasks, seen, nativeToJava);
+            try {
+                MethodHandle handle = library.handles().get(method.getName());
+                if (handle == null) {
+                    throw new UnsupportedOperationException("No native binding for: " + method.getName());
                 }
 
-                Object result;
-                try {
-                    result = handle.invokeWithArguments(nativeArgs);
-                } catch (Throwable t) {
-                    throw new IllegalStateException("Native call failed: " + method.getName(), t);
-                }
+                Object[] rawArgs = args == null ? new Object[0] : args;
+                String[] cppTypes = resolveCppTypes(method, rawArgs);
 
-                for (Runnable task : copyBackTasks) {
-                    task.run();
-                }
+                try (Arena callArena = Arena.ofConfined()) {
+                    List<Runnable> copyBackTasks = new ArrayList<>();
+                    Map<Object, MemorySegment> seen = new IdentityHashMap<>();
+                    Map<Long, Object> nativeToJava = new HashMap<>();
 
-                return unmarshalReturn(result, method, nativeToJava);
+                    Object[] nativeArgs = new Object[rawArgs.length];
+                    for (int i = 0; i < rawArgs.length; i++) {
+                        nativeArgs[i] = marshaller.marshal(
+                                rawArgs[i], cppTypes[i], callArena, copyBackTasks, seen, nativeToJava);
+                    }
+
+                    Object result;
+                    try {
+                        result = handle.invokeWithArguments(nativeArgs);
+                    } catch (Throwable t) {
+                        throw new IllegalStateException("Native call failed: " + method.getName(), t);
+                    }
+
+                    for (Runnable task : copyBackTasks) {
+                        task.run();
+                    }
+
+                    return unmarshalReturn(result, method, nativeToJava);
+                }
+            } finally {
+                library.release();
             }
         };
 

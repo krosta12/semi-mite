@@ -4,6 +4,7 @@ import org.example.client.MiteClientRegistry;
 import org.example.client.MiteClientScanner;
 import org.example.compiler.CompilerConfig;
 import org.example.compiler.NativeCompiler;
+import org.example.linker.ManagedLibrary;
 import org.example.linker.MiteClientProxyFactory;
 import org.example.linker.NativeLibraryLinker;
 import org.example.parser.CppSignatureParser;
@@ -12,15 +13,13 @@ import org.example.parser.NativeFunctionSignature;
 
 import org.example.linker.NativeLibraryLinker.LinkedLibrary;
 
-import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 
-public class MiteBootstrap {
+public class MiteBootstrap implements AutoCloseable {
 
     private final MiteClientScanner clientScanner = new MiteClientScanner();
     private final CppSourceScanner cppSourceScanner = new CppSourceScanner();
@@ -45,22 +44,23 @@ public class MiteBootstrap {
         }
 
         LinkedLibrary initial = buildAndLink(config);
-        context.addLibrary(initial);
+        ManagedLibrary initialManaged = new ManagedLibrary(initial);
+        context.addLibrary(initialManaged);
 
-        AtomicReference<Map<String, MethodHandle>> handlesRef = new AtomicReference<>(initial.handles());
-        AtomicReference<LinkedLibrary> currentLib = new AtomicReference<>(initial);
-        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory();
+        AtomicReference<ManagedLibrary> currentLib = new AtomicReference<>(initialManaged);
+        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(config.alignmentBytes());
 
         for (Class<?> clientInterface : clientRegistry.getClients()) {
-            context.put(clientInterface, proxyFactory.create(clientInterface, handlesRef::get));
+            context.put(clientInterface, proxyFactory.create(clientInterface, currentLib::get));
         }
 
         if (enableHotReload) {
             hotReloadWatcher.start(config, newLib -> {
-                LinkedLibrary old = currentLib.getAndSet(newLib);
-                handlesRef.set(newLib.handles());
-                context.addLibrary(newLib);
-                try { old.close(); } catch (Exception ignored) {}
+                ManagedLibrary managed = new ManagedLibrary(newLib);
+                ManagedLibrary old = currentLib.getAndSet(managed);
+                context.addLibrary(managed);
+
+                old.retire();
             });
         }
         return context;

@@ -15,7 +15,7 @@ class CppTypeMapperTest {
         assertEquals(ValueLayout.JAVA_INT, mapper.toLayout("int"));
         assertEquals(ValueLayout.JAVA_FLOAT, mapper.toLayout("float"));
         assertEquals(ValueLayout.JAVA_DOUBLE, mapper.toLayout("double"));
-        assertEquals(ValueLayout.JAVA_LONG, mapper.toLayout("long"));
+        assertEquals(ValueLayout.JAVA_LONG, mapper.toLayout("long long"));
         assertEquals(ValueLayout.JAVA_BOOLEAN, mapper.toLayout("bool"));
     }
 

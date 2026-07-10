@@ -12,9 +12,30 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class NativeMarshaller {
 
+    private final long pointerSize;
+
+    private final Map<Class<?>, Field[]> fieldsCache = new ConcurrentHashMap<>();
+    private final Map<Class<?>, FieldLayout> layoutCache = new ConcurrentHashMap<>();
+
+    public NativeMarshaller() {
+        this(8);
+    }
+
+    public NativeMarshaller(int pointerSize) {
+        if (pointerSize != 4 && pointerSize != 8) {
+            throw new IllegalArgumentException("pointer.size must be 4 or 8, got: " + pointerSize);
+        }
+        long actualAddressSize = ValueLayout.ADDRESS.byteSize();
+        if (pointerSize != actualAddressSize) {
+            throw new IllegalArgumentException(
+                    "pointer.size=" + pointerSize + " does not match this JVM's native address size");
+        }
+        this.pointerSize = pointerSize;
+    }
 
     public Object marshal(Object arg, String cppType, Arena arena,
                           List<Runnable> copyBackTasks,
@@ -196,8 +217,9 @@ public class NativeMarshaller {
         }
 
         try {
-            Field[] fields = getDeclaredFields(obj.getClass());
-            FieldLayout layout = computeLayout(fields);
+            Class<?> clazz = obj.getClass();
+            Field[] fields = getDeclaredFields(clazz);
+            FieldLayout layout = getLayout(clazz, fields);
 
             MemorySegment seg = arena.allocate(layout.totalSize(), layout.maxAlignment());
             seen.put(obj, seg);
@@ -355,7 +377,7 @@ public class NativeMarshaller {
             nativeToJava.put(seg.address(), obj);
 
             Field[] fields = getDeclaredFields(clazz);
-            FieldLayout layout = computeLayout(fields);
+            FieldLayout layout = getLayout(clazz, fields);
             long structSize = layout.totalSize();
             MemorySegment sized = seg.reinterpret(structSize);
 
@@ -379,6 +401,15 @@ public class NativeMarshaller {
     record FieldLayout(Map<Field, Long> offsets, long totalSize, long maxAlignment) {
     }
 
+
+    private FieldLayout getLayout(Class<?> clazz, Field[] fields) {
+        FieldLayout cached = layoutCache.get(clazz);
+        if (cached != null) return cached;
+        FieldLayout computed = computeLayout(fields);
+        layoutCache.putIfAbsent(clazz, computed);
+        return layoutCache.get(clazz);
+    }
+
     private FieldLayout computeLayout(Field[] fields) {
         Map<Field, Long> offsets = new HashMap<>();
         long offset = 0;
@@ -386,11 +417,12 @@ public class NativeMarshaller {
 
         for (Field field : fields) {
             Class<?> fType = field.getType();
-            long align = fieldSize(fType);
+            long size = fieldSize(fType);
+            long align = fieldAlignment(fType);
             if (align > maxAlign) maxAlign = align;
             offset = (offset + align - 1) & -align;
             offsets.put(field, offset);
-            offset += align;
+            offset += size;
         }
 
         long total = (offset + maxAlign - 1) & -maxAlign;
@@ -399,14 +431,26 @@ public class NativeMarshaller {
     }
 
     private long fieldSize(Class<?> fType) {
-        if (fType == int.class || fType == Integer.class || fType == float.class || fType == Float.class) return 4;
-        if (fType == long.class || fType == Long.class || fType == double.class || fType == Double.class) return 8;
+        if (fType == int.class || fType == Integer.class
+                || fType == float.class || fType == Float.class) return 4;
+        if (fType == long.class || fType == Long.class
+                || fType == double.class || fType == Double.class) return 8;
         if (fType == short.class || fType == Short.class) return 2;
-        if (fType == boolean.class || fType == Boolean.class || fType == byte.class || fType == Byte.class) return 1;
-        return 8;
+        if (fType == boolean.class || fType == Boolean.class
+                || fType == byte.class || fType == Byte.class) return 1;
+        return pointerSize;
+    }
+
+
+    private long fieldAlignment(Class<?> fType) {
+        if (!fType.isPrimitive()) return pointerSize;
+        return fieldSize(fType);
     }
 
     private Field[] getDeclaredFields(Class<?> clazz) {
+        Field[] cached = fieldsCache.get(clazz);
+        if (cached != null) return cached;
+
         Field[] fields = clazz.getDeclaredFields();
         List<Field> result = new ArrayList<>();
         for (Field f : fields) {
@@ -415,7 +459,9 @@ public class NativeMarshaller {
                 result.add(f);
             }
         }
-        return result.toArray(new Field[0]);
+        Field[] computed = result.toArray(new Field[0]);
+        fieldsCache.putIfAbsent(clazz, computed);
+        return fieldsCache.get(clazz);
     }
 
 }

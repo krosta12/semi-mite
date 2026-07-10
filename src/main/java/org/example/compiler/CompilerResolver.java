@@ -20,7 +20,7 @@ public class CompilerResolver {
                 return candidate;
             }
         }
-        throw new IllegalStateException("Native compiler doesn't found on PATH (tried: " + CANDIDATES + ")");
+        throw new IllegalStateException("Native compiler not found on PATH (tried: " + CANDIDATES + ")");
     }
 
     private boolean isOnPath(String binary, String path) {

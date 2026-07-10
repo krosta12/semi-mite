@@ -50,16 +50,14 @@ class MiteBootstrapIntegrationTest {
                 tempDir.resolve(".mite-cache"),
                 null,
                 java.util.List.of("-O2"),
-                4
+                (int) java.lang.foreign.ValueLayout.ADDRESS.byteSize()
         );
 
-        MiteBootstrap bootstrap = new MiteBootstrap();
-        try (MiteContext context = bootstrap.start("org.example.core", config)) {
+        try (MiteBootstrap bootstrap = new MiteBootstrap();
+             MiteContext context = bootstrap.start("org.example.core", config)) {
             CalcClient client = context.get(CalcClient.class);
 
             assertEquals(7, client.add(3, 4));
-        } finally {
-            bootstrap.close();
         }
     }
 

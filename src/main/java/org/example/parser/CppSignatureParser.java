@@ -17,7 +17,7 @@ public class CppSignatureParser {
 
 
     private static final Pattern FUNCTION = Pattern.compile(
-            "([\\w:\\*\\s]+?)\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*\\{"
+            "([\\w:*\\s]+?)\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*\\{"
     );
 
     public List<NativeFunctionSignature> parse(Path cppFile) {

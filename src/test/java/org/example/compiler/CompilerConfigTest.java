@@ -17,7 +17,7 @@ class CompilerConfigTest {
         assertEquals(Path.of(".mite-cache"), config.cacheDir());
         assertNull(config.compilerPath());
         assertEquals(List.of("-O2"), config.compilerFlags());
-        assertEquals(4, config.alignmentBytes());
+        assertEquals(8, config.alignmentBytes());
     }
 
     @Test

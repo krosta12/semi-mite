@@ -35,7 +35,7 @@ class NativeCompilerTest {
                 () -> compiler.compile(List.of(), config, "test-lib"));
     }
 
-    @Test
+    @Test //recheck
     void libraryOutputNameMatchesOS(@TempDir Path tempDir) throws Exception {
         String os = System.getProperty("os.name", "").toLowerCase();
         String expected;

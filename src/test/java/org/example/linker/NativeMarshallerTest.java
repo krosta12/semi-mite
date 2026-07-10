@@ -18,9 +18,17 @@ class NativeMarshallerTest {
 
     private final NativeMarshaller marshaller = new NativeMarshaller();
 
-    private List<Runnable> tasks() { return new ArrayList<>(); }
-    private Map<Object, MemorySegment> seen() { return new IdentityHashMap<>(); }
-    private Map<Long, Object> n2j() { return new HashMap<>(); }
+    private List<Runnable> tasks() {
+        return new ArrayList<>();
+    }
+
+    private Map<Object, MemorySegment> seen() {
+        return new IdentityHashMap<>();
+    }
+
+    private Map<Long, Object> n2j() {
+        return new HashMap<>();
+    }
 
     @Test
     void marshalsStringToNullTerminated() {
@@ -107,6 +115,36 @@ class NativeMarshallerTest {
         try (Arena arena = Arena.ofConfined()) {
             assertThrows(IllegalArgumentException.class, () ->
                     marshaller.marshalCustomObject(new Object(), arena, tasks(), seen(), n2j()));
+        }
+    }
+
+
+    @Test
+    void mixedPrimitiveStructLayoutIsCorrect() {
+        @MiteStruct
+        class Mixed { //define
+            public final int a = 1;
+            public final float b = 2.0f;
+            public final long c = 3L;
+            public final double d = 4.0;
+        }
+        Mixed obj = new Mixed();
+
+        try (Arena arena = Arena.ofConfined()) {
+            Map<Long, Object> n2j = n2j();
+            MemorySegment seg = marshaller.marshalCustomObject(obj, arena, tasks(), seen(), n2j);
+
+            int aVal = seg.get(ValueLayout.JAVA_INT, 0);
+            float bVal = seg.get(ValueLayout.JAVA_FLOAT, 4);
+            long cVal = seg.get(ValueLayout.JAVA_LONG, 8);
+            double dVal = seg.get(ValueLayout.JAVA_DOUBLE, 16);
+
+            //use defined
+            assertEquals(1, aVal, "int field at offset 0");
+            assertEquals(2.0f, bVal, "float field at offset 4");
+            assertEquals(3L, cVal, "long field at offset 8");
+            assertEquals(4.0, dVal, 1e-9, "double field at offset 16");
+            assertEquals(24L, seg.byteSize(), "total struct size must be the 24 bytes");
         }
     }
 

@@ -16,19 +16,21 @@ public class CppTypeMapper {
 
     static {
         PRIMITIVES.put("void", null);
+        PRIMITIVES.put("char", ValueLayout.JAVA_BYTE);
+        PRIMITIVES.put("short", ValueLayout.JAVA_SHORT);
+        PRIMITIVES.put("bool", ValueLayout.JAVA_BOOLEAN);
         PRIMITIVES.put("int", ValueLayout.JAVA_INT);
         PRIMITIVES.put("float", ValueLayout.JAVA_FLOAT);
         PRIMITIVES.put("double", ValueLayout.JAVA_DOUBLE);
         PRIMITIVES.put("long", LONG_LAYOUT);
-        PRIMITIVES.put("unsigned long", LONG_LAYOUT);
         PRIMITIVES.put("long long", ValueLayout.JAVA_LONG);
-        PRIMITIVES.put("unsigned long long", ValueLayout.JAVA_LONG);
-        PRIMITIVES.put("short", ValueLayout.JAVA_SHORT);
-        PRIMITIVES.put("unsigned short", ValueLayout.JAVA_SHORT);
-        PRIMITIVES.put("char", ValueLayout.JAVA_BYTE);
+
+
         PRIMITIVES.put("unsigned char", ValueLayout.JAVA_BYTE);
+        PRIMITIVES.put("unsigned short", ValueLayout.JAVA_SHORT);
         PRIMITIVES.put("unsigned int", ValueLayout.JAVA_INT);
-        PRIMITIVES.put("bool", ValueLayout.JAVA_BOOLEAN);
+        PRIMITIVES.put("unsigned long", LONG_LAYOUT);
+        PRIMITIVES.put("unsigned long long", ValueLayout.JAVA_LONG);
     }
 
 

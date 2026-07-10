@@ -17,7 +17,7 @@ public record CompilerConfig(
                 Path.of(".mite-cache"),
                 null,
                 List.of("-O2"),
-                4
+                8
         );
     }
 

@@ -81,7 +81,7 @@ class CppSignatureParserTest {
         String src = """
                 // @mite
                 int a() { return 1; }
-
+                
                 // @mite
                 int b() { return 2; }
                 """;
