@@ -5,24 +5,42 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Cpp Compiler
+      - name: Check C++ Compiler (Linux)
+        if: runner.os == 'Linux'
         run: |
           g++ --version
           gcc --version
+
+      - name: Check C++ Compiler (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          g++ --version
+          gcc --version
+        shell: bash
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '22'
+          java-version: '24'
 
       - name: Make gradlew executable
+        if: runner.os == 'Linux'
         run: chmod +x gradlew
 
-      - name: Run tests
+      - name: Run tests (Linux)
+        if: runner.os == 'Linux'
         run: ./gradlew test
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat test
