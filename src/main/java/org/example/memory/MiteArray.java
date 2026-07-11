@@ -1,14 +1,11 @@
 package org.example.memory;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 
 public class MiteArray<T> implements AutoCloseable {
-
-    private static final int DEFAULT_ALIGNMENT = 8;
 
     @FunctionalInterface
     interface Getter<T> {
@@ -26,47 +23,47 @@ public class MiteArray<T> implements AutoCloseable {
     private final Getter<T> getter;
     private final Setter<T> setter;
 
-    private MiteArray(int length, MemoryLayout layout, int alignment,
+    private MiteArray(int length, ValueLayout layout,
                       Getter<T> getter, Setter<T> setter) {
         this.length = length;
         this.arena = Arena.ofShared();
-        this.segment = arena.allocate(layout.byteSize() * Math.max(length, 1), alignment);
+        this.segment = arena.allocate(layout.byteSize() * Math.max(length, 1), layout.byteAlignment());
         this.getter = getter;
         this.setter = setter;
     }
 
     public static MiteArray<Float> ofFloats(int length) {
-        return new MiteArray<>(length, ValueLayout.JAVA_FLOAT, DEFAULT_ALIGNMENT,
+        return new MiteArray<>(length, ValueLayout.JAVA_FLOAT,
                 (seg, i) -> seg.getAtIndex(ValueLayout.JAVA_FLOAT, i),
                 (seg, i, v) -> seg.setAtIndex(ValueLayout.JAVA_FLOAT, i, v));
     }
 
     public static MiteArray<Integer> ofInts(int length) {
-        return new MiteArray<>(length, ValueLayout.JAVA_INT, DEFAULT_ALIGNMENT,
+        return new MiteArray<>(length, ValueLayout.JAVA_INT,
                 (seg, i) -> seg.getAtIndex(ValueLayout.JAVA_INT, i),
                 (seg, i, v) -> seg.setAtIndex(ValueLayout.JAVA_INT, i, v));
     }
 
     public static MiteArray<Double> ofDoubles(int length) {
-        return new MiteArray<>(length, ValueLayout.JAVA_DOUBLE, DEFAULT_ALIGNMENT,
+        return new MiteArray<>(length, ValueLayout.JAVA_DOUBLE,
                 (seg, i) -> seg.getAtIndex(ValueLayout.JAVA_DOUBLE, i),
                 (seg, i, v) -> seg.setAtIndex(ValueLayout.JAVA_DOUBLE, i, v));
     }
 
     public static MiteArray<Long> ofLongs(int length) {
-        return new MiteArray<>(length, ValueLayout.JAVA_LONG, DEFAULT_ALIGNMENT,
+        return new MiteArray<>(length, ValueLayout.JAVA_LONG,
                 (seg, i) -> seg.getAtIndex(ValueLayout.JAVA_LONG, i),
                 (seg, i, v) -> seg.setAtIndex(ValueLayout.JAVA_LONG, i, v));
     }
 
     public static MiteArray<Byte> ofBytes(int length) {
-        return new MiteArray<>(length, ValueLayout.JAVA_BYTE, DEFAULT_ALIGNMENT,
+        return new MiteArray<>(length, ValueLayout.JAVA_BYTE,
                 (seg, i) -> seg.getAtIndex(ValueLayout.JAVA_BYTE, i),
                 (seg, i, v) -> seg.setAtIndex(ValueLayout.JAVA_BYTE, i, v));
     }
 
     public static MiteArray<String> ofStrings(String... strings) {
-        MiteArray<String> arr = new MiteArray<>(strings.length, ValueLayout.ADDRESS, DEFAULT_ALIGNMENT,
+        MiteArray<String> arr = new MiteArray<>(strings.length, ValueLayout.ADDRESS,
                 (seg, i) -> {
                     MemorySegment ptr = seg.getAtIndex(ValueLayout.ADDRESS, i).reinterpret(4096);
                     long len = 0;
