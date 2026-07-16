@@ -65,3 +65,5 @@ cppScripts/
 *.ear
 
 local.properties
+
+**/src/main/**/example/
