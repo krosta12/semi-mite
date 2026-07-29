@@ -165,6 +165,9 @@ MiteContext context = Mite.scan("com.example")
 
 `MiteBuilder` is immutable from the user's perspective: every configuration method updates the internal compiler configuration and returns the same builder instance, allowing fluent method chaining.
 
+## Easy to implement
+[Maven Central ](https://central.sonatype.com/artifact/io.github.krosta12/semi-mite)
+
 ## Examples
 
 A separate repository with runnable examples (structs, arrays, hot reload, error handling, etc.) is available at:

@@ -1,6 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'com.vanniktech.maven.publish' version '0.37.0'
 }
 
 group = 'io.github.krosta12'
@@ -10,9 +11,6 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(22)
     }
-
-    withSourcesJar()
-    withJavadocJar()
 }
 
 repositories {
@@ -34,10 +32,35 @@ test {
     }
 }
 
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    coordinates("io.github.krosta12", "semi-mite", "0.1.0")
+
+    pom {
+        name = "semi-mite"
+        description = "Call C++ from Java without JNI, built on Project Panama (FFM API)."
+        inceptionYear = "2026"
+        url = "https://github.com/krosta12/semi-mite"
+
+        licenses {
+            license {
+                name = "MIT"
+                url = "https://opensource.org/licenses/MIT"
+            }
+        }
+        developers {
+            developer {
+                id = "krosta12"
+                name = "krosta12"
+                url = "https://github.com/krosta12"
+            }
+        }
+        scm {
+            url = "https://github.com/krosta12/semi-mite"
+            connection = "scm:git:git://github.com/krosta12/semi-mite.git"
+            developerConnection = "scm:git:ssh://git@github.com/krosta12/semi-mite.git"
         }
     }
 }
