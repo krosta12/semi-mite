@@ -2,9 +2,14 @@ package io.github.krosta12.semimite.compiler;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -38,6 +43,13 @@ public class NativeCompiler {
 
         String compiler = resolver.resolve(config);
         Path output = config.cacheDir().resolve(libraryName + libraryExtension());
+        Path hashFile = config.cacheDir().resolve(libraryName + ".hash");
+
+        String currentHash = computeHash(sources, config, compiler);
+
+        if (Files.exists(output) && isHashUpToDate(hashFile, currentHash)) {
+            return output;
+        }
 
         List<String> command = new ArrayList<>();
         command.add(compiler);
@@ -53,7 +65,52 @@ public class NativeCompiler {
         command.add(output.toString());
 
         run(command);
+        writeHash(hashFile, currentHash);
         return output;
+    }
+
+    private String computeHash(List<Path> sources, CompilerConfig config, String compiler) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+            List<Path> sorted = new ArrayList<>(sources);
+            sorted.sort(Comparator.comparing(Path::toString));
+
+            for (Path source : sorted) {
+                digest.update(source.toString().getBytes(StandardCharsets.UTF_8));
+                digest.update(Files.readAllBytes(source));
+            }
+            digest.update(compiler.getBytes(StandardCharsets.UTF_8));
+            for (String flag : config.compilerFlags()) {
+                digest.update(flag.getBytes(StandardCharsets.UTF_8));
+            }
+
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private boolean isHashUpToDate(Path hashFile, String currentHash) {
+        if (!Files.exists(hashFile)) {
+            return false;
+        }
+        try {
+            String storedHash = Files.readString(hashFile, StandardCharsets.UTF_8).strip();
+            return storedHash.equals(currentHash);
+        } catch (IOException e) {
+            return false; // unreadable hash file - rebuild to be safe
+        }
+    }
+
+    private void writeHash(Path hashFile, String hash) {
+        try {
+            Files.writeString(hashFile, hash, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**

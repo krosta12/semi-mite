@@ -34,14 +34,6 @@ test {
     }
 }
 
-tasks.register('runExample', JavaExec) {
-    group = 'application'
-    description = 'Runs the manual test example (io.github.krosta12.semimite.example.Main)'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'io.github.krosta12.semimite.example.Main'
-    jvmArgs = ['--enable-native-access=ALL-UNNAMED']
-}
-
 publishing {
     publications {
         mavenJava(MavenPublication) {
