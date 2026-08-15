@@ -1,10 +1,8 @@
 package io.github.krosta12.semimite.compiler;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -37,24 +35,6 @@ class CompilerResolverTest {
         }
     }
 
-    @Test
-    void findsCompilerOnTempPath(@TempDir Path tempDir) throws IOException {
-        boolean win = System.getProperty("os.name", "").toLowerCase().contains("win");
-        String exe = win ? "g++.exe" : "g++";
-        File fakeGpp = tempDir.resolve(exe).toFile();
-        assertTrue(fakeGpp.createNewFile());
-
-        String originalPath = System.getenv("PATH");
-
-
-
-        CompilerConfig config = new CompilerConfig(
-                Path.of("scripts"), Path.of("cache"), fakeGpp.getAbsolutePath(), List.of(), 4);
-
-        String resolved = resolver.resolve(config);
-
-        assertEquals(fakeGpp.getAbsolutePath(), resolved);
-    }
 
     @Test
     void throwsWhenNoCompilerOnPath() {

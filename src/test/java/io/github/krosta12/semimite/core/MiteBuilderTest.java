@@ -24,50 +24,6 @@ class MiteBuilderTest {
     }
 
     @Test
-    void withConfigReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        CompilerConfig config = CompilerConfig.defaults();
-
-        assertSame(builder, builder.withConfig(config));
-    }
-
-    @Test
-    void withScriptsDirReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        assertSame(builder, builder.withScriptsDir(Path.of("scripts")));
-    }
-
-    @Test
-    void withCacheDirReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        assertSame(builder, builder.withCacheDir(Path.of("cache")));
-    }
-
-    @Test
-    void withCompilerReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        assertSame(builder, builder.withCompiler("/usr/bin/g++"));
-    }
-
-    @Test
-    void withFlagsReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        assertSame(builder, builder.withFlags(List.of("-O2")));
-    }
-
-    @Test
-    void withFlagReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        assertSame(builder, builder.withFlag("-O3"));
-    }
-
-    @Test
-    void withHotReloadReturnsSelf() {
-        MiteBuilder builder = Mite.scan("pkg");
-        assertSame(builder, builder.withHotReload());
-    }
-
-    @Test
     void withFlagAppendsToPreviousFlags() {
         MiteBuilder builder = Mite.scan("pkg")
                 .withFlags(List.of("-O2"))

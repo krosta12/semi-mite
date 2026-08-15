@@ -7,11 +7,11 @@ import io.github.krosta12.semimite.compiler.NativeCompiler;
 import io.github.krosta12.semimite.linker.ManagedLibrary;
 import io.github.krosta12.semimite.linker.MiteClientProxyFactory;
 import io.github.krosta12.semimite.linker.NativeLibraryLinker;
+import io.github.krosta12.semimite.linker.NativeLibraryLinker.LinkedLibrary;
+import io.github.krosta12.semimite.linker.PrebuiltLibraryLinker;
 import io.github.krosta12.semimite.parser.CppSignatureParser;
 import io.github.krosta12.semimite.parser.CppSourceScanner;
 import io.github.krosta12.semimite.parser.NativeFunctionSignature;
-
-import io.github.krosta12.semimite.linker.NativeLibraryLinker.LinkedLibrary;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -116,6 +116,37 @@ public class MiteBootstrap implements AutoCloseable {
      */
     public void close() {
         hotReloadWatcher.close();
+    }
+
+    /**
+     * Start the runtime using a pre-built native library (no compilation).
+     * Signatures are derived from the scanned @MiteClient interfaces.
+     *
+     * @param basePackage    the package to scan for @MiteClient interfaces
+     * @param libraryPath    path to the pre-built .dll / .so / .dylib
+     * @param alignmentBytes native pointer alignment (typically 8)
+     * @return a ready MiteContext
+     */
+    public MiteContext startWithLibrary(String basePackage, Path libraryPath, int alignmentBytes) {
+        MiteClientRegistry clientRegistry = clientScanner.scan(basePackage);
+        MiteContext context = new MiteContext();
+        if (clientRegistry.getClients().isEmpty()) {
+            return context;
+        }
+
+        PrebuiltLibraryLinker prebuiltLinker = new PrebuiltLibraryLinker();
+        LinkedLibrary linked = prebuiltLinker.link(libraryPath, new ArrayList<>(clientRegistry.getClients()));
+        ManagedLibrary managed = new ManagedLibrary(linked);
+        context.addLibrary(managed);
+
+        AtomicReference<ManagedLibrary> currentLib = new AtomicReference<>(managed);
+        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(alignmentBytes);
+
+        for (Class<?> iface : clientRegistry.getClients()) {
+            context.put(iface, proxyFactory.create(iface, currentLib::get));
+        }
+
+        return context;
     }
 
 }

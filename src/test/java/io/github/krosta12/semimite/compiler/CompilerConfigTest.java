@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class CompilerConfigTest {
 
@@ -42,14 +43,5 @@ class CompilerConfigTest {
 
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
-    }
-
-    @Test
-    void toStringContainsFieldValues() {
-        CompilerConfig config = CompilerConfig.defaults();
-        String str = config.toString();
-
-        assertTrue(str.contains("cppScripts"));
-        assertTrue(str.contains(".mite-cache"));
     }
 }

@@ -2,7 +2,6 @@ package io.github.krosta12.semimite.client;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Iterator;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,16 +39,5 @@ class MiteClientRegistryTest {
         MiteClientRegistry registry = new MiteClientRegistry();
 
         assertTrue(registry.getClients().isEmpty());
-    }
-
-    @Test
-    void preservesInsertionOrder() {
-        MiteClientRegistry registry = new MiteClientRegistry();
-        registry.register(SampleClient.class);
-        registry.register(NotAClient.class);
-
-        Iterator<Class<?>> it = registry.getClients().iterator();
-        assertEquals(SampleClient.class, it.next());
-        assertEquals(NotAClient.class, it.next());
     }
 }

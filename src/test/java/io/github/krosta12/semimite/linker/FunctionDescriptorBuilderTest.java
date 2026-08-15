@@ -7,7 +7,8 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FunctionDescriptorBuilderTest {
 

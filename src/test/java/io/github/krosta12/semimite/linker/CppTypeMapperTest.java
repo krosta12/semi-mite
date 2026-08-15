@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CppTypeMapperTest {
 
-    private final CppTypeMapper mapper = new CppTypeMapper();
+    private final LanguagesTypeMapper mapper = new LanguagesTypeMapper();
 
     @Test
     void mapsPrimitives() {

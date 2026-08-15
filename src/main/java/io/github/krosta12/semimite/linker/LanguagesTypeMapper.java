@@ -12,7 +12,7 @@ import java.util.Map;
  * {@code "char*"}, {@code "unsigned long"}) to the corresponding
  * {@link MemoryLayout} from the Java FFM API.
  */
-public class CppTypeMapper {
+public class LanguagesTypeMapper {
 
     private static final Map<String, MemoryLayout> PRIMITIVES = new HashMap<>();
 
@@ -93,5 +93,20 @@ public class CppTypeMapper {
                 .trim()
                 .replaceAll("\\s+", " ")
                 .replace(" *", "*");
+    }
+
+    //more options?
+    public String javaToCppType(Class<?> javaType) {
+        return switch (javaType.getTypeName()) {
+            case "void" -> "void";
+            case "int" -> "int";
+            case "long" -> "long";
+            case "double" -> "double";
+            case "float" -> "float";
+            case "short" -> "short";
+            case "byte" -> "char";
+            case "boolean" -> "bool";
+            default -> "void*";
+        };
     }
 }

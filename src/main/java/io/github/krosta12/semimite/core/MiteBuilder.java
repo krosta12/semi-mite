@@ -16,6 +16,8 @@ public class MiteBuilder {
     private CompilerConfig config = CompilerConfig.defaults();
     private boolean hotReload = false;
 
+    private Path prebuiltLibraryPath = null;
+
     /**
      * Creates a builder for the given base package.
      *
@@ -158,9 +160,23 @@ public class MiteBuilder {
      */
     public MiteContext start() {
         MiteBootstrap bootstrap = new MiteBootstrap();
-        MiteContext context = bootstrap.start(basePackage, config, hotReload);
+        MiteContext context;
+        if (prebuiltLibraryPath != null) {
+            context = bootstrap.startWithLibrary(
+                    basePackage,
+                    prebuiltLibraryPath,
+                    config.alignmentBytes()
+            );
+        } else {
+            context = bootstrap.start(basePackage, config, hotReload);
+        }
         context.setBootstrap(bootstrap);
         return context;
+    }
+
+    public MiteBuilder withPrebuiltLibrary(Path libraryPath) {
+        this.prebuiltLibraryPath = libraryPath;
+        return this;
     }
 
 }

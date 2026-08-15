@@ -7,11 +7,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -40,7 +36,7 @@ public class NativeMarshaller {
      * @param pointerSize the native pointer size in bytes; must be 4 or 8, and
      *                    must match the current JVM's native address size
      * @throws IllegalArgumentException if {@code pointerSize} is not 4 or 8, or
-     *                                   does not match the JVM's actual address size
+     *                                  does not match the JVM's actual address size
      */
     public NativeMarshaller(int pointerSize) {
         if (pointerSize != 4 && pointerSize != 8) {
@@ -60,12 +56,12 @@ public class NativeMarshaller {
      * null-terminated native string, pointer-typed arguments are delegated to
      * {@link #marshalPointerArg}, and anything else is passed through unchanged.
      *
-     * @param arg            the Java argument value
-     * @param cppType        the C++ type hint for this argument, or {@code null}
-     * @param arena           the arena to allocate native memory from
-     * @param copyBackTasks  list to append copy-back tasks to (run after the native call returns)
-     * @param seen           identity map of already-marshalled objects (cycle protection)
-     * @param nativeToJava   map of native addresses to their originating Java objects
+     * @param arg           the Java argument value
+     * @param cppType       the C++ type hint for this argument, or {@code null}
+     * @param arena         the arena to allocate native memory from
+     * @param copyBackTasks list to append copy-back tasks to (run after the native call returns)
+     * @param seen          identity map of already-marshalled objects (cycle protection)
+     * @param nativeToJava  map of native addresses to their originating Java objects
      * @return the value to pass to the native call for this argument
      */
     public Object marshal(Object arg, String cppType, Arena arena,
@@ -96,11 +92,11 @@ public class NativeMarshaller {
      * copy-back task is registered to write changes back into the Java array
      * after the call returns.
      *
-     * @param arg            the argument value
-     * @param arena           the arena to allocate native memory from
-     * @param copyBackTasks  list to append copy-back tasks to
-     * @param seen           identity map of already-marshalled objects (cycle protection)
-     * @param nativeToJava   map of native addresses to their originating Java objects
+     * @param arg           the argument value
+     * @param arena         the arena to allocate native memory from
+     * @param copyBackTasks list to append copy-back tasks to
+     * @param seen          identity map of already-marshalled objects (cycle protection)
+     * @param nativeToJava  map of native addresses to their originating Java objects
      * @return the native memory segment representing the argument
      */
     private Object marshalPointerArg(Object arg, Arena arena,
@@ -168,11 +164,11 @@ public class NativeMarshaller {
      * primitive array; other types get an array of struct pointers). A
      * copy-back task is registered to propagate changes back to the collection.
      *
-     * @param col            the collection to marshal
-     * @param arena           the arena to allocate native memory from
-     * @param copyBackTasks  list to append copy-back tasks to
-     * @param seen           identity map of already-marshalled objects (cycle protection)
-     * @param nativeToJava   map of native addresses to their originating Java objects
+     * @param col           the collection to marshal
+     * @param arena         the arena to allocate native memory from
+     * @param copyBackTasks list to append copy-back tasks to
+     * @param seen          identity map of already-marshalled objects (cycle protection)
+     * @param nativeToJava  map of native addresses to their originating Java objects
      * @return the native memory segment, or {@link MemorySegment#NULL} if the collection is empty
      */
     private MemorySegment allocateNativeCollection(Collection<?> col, Arena arena,
@@ -279,13 +275,13 @@ public class NativeMarshaller {
      * against reference cycles. A copy-back task is registered to read the
      * fields back into the Java object once the native call returns.
      *
-     * @param obj            the {@code @MiteStruct}-annotated object to marshal
-     * @param arena           the arena to allocate native memory from
-     * @param copyBackTasks  list to append the copy-back task to
-     * @param seen           identity map of already-marshalled objects (cycle protection)
-     * @param nativeToJava   map of native addresses to their originating Java objects
+     * @param obj           the {@code @MiteStruct}-annotated object to marshal
+     * @param arena         the arena to allocate native memory from
+     * @param copyBackTasks list to append the copy-back task to
+     * @param seen          identity map of already-marshalled objects (cycle protection)
+     * @param nativeToJava  map of native addresses to their originating Java objects
      * @return the native memory segment representing the object,
-     *         or {@link MemorySegment#NULL} if {@code obj} is {@code null}
+     * or {@link MemorySegment#NULL} if {@code obj} is {@code null}
      * @throws IllegalArgumentException if {@code obj}'s class is not annotated with {@code @MiteStruct}
      */
     MemorySegment marshalCustomObject(Object obj, Arena arena,
@@ -333,14 +329,14 @@ public class NativeMarshaller {
      * its native structure segment (scalars, strings, arrays, nested
      * {@code @MiteStruct} objects, and collections).
      *
-     * @param obj            the source Java object
-     * @param fields         the object's declared fields
-     * @param offsets        field-to-byte-offset mapping within the structure
-     * @param seg            the destination native memory segment
-     * @param arena           the arena to allocate any nested native memory from
-     * @param copyBackTasks  list to append copy-back tasks for nested allocations
-     * @param seen           identity map of already-marshalled objects (cycle protection)
-     * @param nativeToJava   map of native addresses to their originating Java objects
+     * @param obj           the source Java object
+     * @param fields        the object's declared fields
+     * @param offsets       field-to-byte-offset mapping within the structure
+     * @param seg           the destination native memory segment
+     * @param arena         the arena to allocate any nested native memory from
+     * @param copyBackTasks list to append copy-back tasks for nested allocations
+     * @param seen          identity map of already-marshalled objects (cycle protection)
+     * @param nativeToJava  map of native addresses to their originating Java objects
      * @throws Exception if a field cannot be read via reflection
      */
     private void writeFields(Object obj, Field[] fields, Map<Field, Long> offsets,
@@ -589,7 +585,7 @@ public class NativeMarshaller {
      *
      * @param fType the field's declared type
      * @return 4 for int/float, 8 for long/double, 2 for short, 1 for
-     *         byte/boolean, or {@link #pointerSize} for reference types
+     * byte/boolean, or {@link #pointerSize} for reference types
      */
     private long fieldSize(Class<?> fType) {
         if (fType == int.class || fType == Integer.class

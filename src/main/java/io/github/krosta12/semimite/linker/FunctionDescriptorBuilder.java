@@ -13,7 +13,7 @@ import java.util.List;
  */
 public class FunctionDescriptorBuilder {
 
-    private final CppTypeMapper typeMapper = new CppTypeMapper();
+    private final LanguagesTypeMapper typeMapper = new LanguagesTypeMapper();
 
     /**
      * Builds the function descriptor (argument layouts + return layout) for

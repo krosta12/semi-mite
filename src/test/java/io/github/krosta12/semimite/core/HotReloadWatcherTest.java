@@ -8,7 +8,7 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 class HotReloadWatcherTest {
 
@@ -51,55 +51,11 @@ class HotReloadWatcherTest {
                 null, List.of(), 4);
 
         assertDoesNotThrow(() -> {
-            watcher.start(config, lib -> {});
+            watcher.start(config, lib -> {
+            });
             watcher.close();
         });
 
         watcher.close();
     }
-
-//    @Test
-//    @EnabledIf("compilerAvailable")
-//    void detectsChangeInNewlyCreatedSubdirectory(@TempDir Path tempDir) throws Exception {
-//        Path scriptsDir = tempDir.resolve("scripts");
-//        Files.createDirectories(scriptsDir);
-//
-//        Files.writeString(scriptsDir.resolve("init.cpp"), """
-//                extern "C" {
-//                // @mite
-//                int init() { return 0; }
-//                }
-//                """);
-//
-//        CompilerConfig config = new CompilerConfig(
-//                scriptsDir,
-//                tempDir.resolve(".cache"),
-//                null, List.of(), 4);
-//
-//        CountDownLatch firstBuild  = new CountDownLatch(1);
-//        CountDownLatch secondBuild = new CountDownLatch(2);
-//
-//        try (HotReloadWatcher watcher = new HotReloadWatcher()) {
-//            watcher.start(config, lib -> {
-//                firstBuild.countDown();
-//                secondBuild.countDown();
-//            });
-//
-//            Path sub = scriptsDir.resolve("sub");
-//            Files.createDirectories(sub);
-//
-//            Thread.sleep(600);
-//            Files.writeString(sub.resolve("extra.cpp"), """
-//                    extern "C" {
-//                    // @mite
-//                    int extra() { return 1; }
-//                    }
-//                    """);
-//            boolean triggered = secondBuild.await(10, TimeUnit.SECONDS);
-//            if (!triggered) {
-//                triggered = firstBuild.getCount() == 0;
-//            }
-//            assertTrue(triggered, "Hot reload should trigger after file written in new subdirectory");
-//        }
-//    }
 }

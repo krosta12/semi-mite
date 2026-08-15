@@ -9,7 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NativeCompilerTest {
 
@@ -33,27 +34,6 @@ class NativeCompilerTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> compiler.compile(List.of(), config, "test-lib"));
-    }
-
-    @Test //recheck
-    void libraryOutputNameMatchesOS(@TempDir Path tempDir) throws Exception {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        String expected;
-        if (os.contains("win")) {
-            expected = ".dll";
-        } else if (os.contains("mac")) {
-            expected = ".dylib";
-        } else {
-            expected = ".so";
-        }
-
-        CompilerConfig config = new CompilerConfig(
-                tempDir, tempDir.resolve("cache"), null, List.of(), 4);
-        Path fakeCpp = tempDir.resolve("fake.cpp");
-        Files.writeString(fakeCpp, "// empty");
-
-        assertNotNull(expected);
-        assertFalse(expected.isBlank());
     }
 
     @Test
