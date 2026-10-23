@@ -4,6 +4,7 @@ import io.github.krosta12.semimite.linker.NativeLibraryLinker.LinkedLibrary;
 import io.github.krosta12.semimite.parser.NativeFunctionSignature;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,9 @@ public class PrebuiltLibraryLinker {
         List<NativeFunctionSignature> signatures = new ArrayList<>();
         for (Class<?> iface : clientInterfaces) {
             for (Method method : iface.getDeclaredMethods()) {
+                if (method.isDefault() || Modifier.isStatic(method.getModifiers()) || method.isSynthetic()) {
+                    continue;
+                }
                 signatures.add(toSignature(method));
             }
         }

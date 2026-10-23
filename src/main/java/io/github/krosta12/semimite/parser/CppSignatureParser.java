@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,7 +19,8 @@ import java.util.regex.Pattern;
  */
 public class CppSignatureParser {
 
-    private static final Pattern MARKER = Pattern.compile("//\\s*@mite");
+    private static final Pattern MARKER =
+            Pattern.compile("^[ \\t]*//[/!]?[ \\t]*@mite\\b", Pattern.MULTILINE);
 
 
     private static final Pattern FUNCTION = Pattern.compile(
@@ -33,13 +35,26 @@ public class CppSignatureParser {
      * @throws UncheckedIOException if the file cannot be read
      */
     public List<NativeFunctionSignature> parse(Path cppFile) {
+        return parse(cppFile, warning -> {
+        });
+    }
+
+    /**
+     * Same as {@link #parse(Path)}, but reports ignored markers to {@code onUnparsedMarker}.
+     *
+     * @param cppFile          the source file to parse
+     * @param onUnparsedMarker receives a message for every ignored marker
+     * @return the signatures found in the file
+     * @throws UncheckedIOException if the file cannot be read
+     */
+    public List<NativeFunctionSignature> parse(Path cppFile, Consumer<String> onUnparsedMarker) {
         String content;
         try {
             content = Files.readString(cppFile);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        return parse(content, cppFile.toString());
+        return parse(content, cppFile.toString(), onUnparsedMarker);
     }
 
     /**
@@ -52,21 +67,56 @@ public class CppSignatureParser {
      * @return the list of native function signatures found
      */
     List<NativeFunctionSignature> parse(String content, String sourceFile) {
+        return parse(content, sourceFile, warning -> {
+        });
+    }
+
+    /**
+     * Parses the source and reports markers that do not annotate a parsable function.
+     *
+     * @param content          the C++ source text
+     * @param sourceFile       the originating file path
+     * @param onUnparsedMarker receives a message for every ignored marker
+     * @return the signatures found
+     */
+    List<NativeFunctionSignature> parse(String content, String sourceFile, Consumer<String> onUnparsedMarker) {
         List<NativeFunctionSignature> result = new ArrayList<>();
         Matcher markerMatcher = MARKER.matcher(content);
         while (markerMatcher.find()) {
-            int searchFrom = markerMatcher.end();
+            int lineNumber = lineOf(content, markerMatcher.start());
+
+            int lineEnd = content.indexOf('\n', markerMatcher.end());
+            if (lineEnd < 0) lineEnd = content.length();
+            String tail = content.substring(markerMatcher.end(), lineEnd).trim();
+            if (!tail.isEmpty() && !tail.startsWith("//")) {
+                onUnparsedMarker.accept(sourceFile + ":" + lineNumber
+                        + ": // @mite must be alone on its line (a trailing // comment is allowed),"
+                        + " marker ignored");
+                continue;
+            }
+
+            int searchFrom = lineEnd;
             Matcher fnMatcher = FUNCTION.matcher(content);
             fnMatcher.region(searchFrom, content.length());
-            if (fnMatcher.lookingAt() || fnMatcher.find()) {
 
-                String between = content.substring(searchFrom, fnMatcher.start());
-                if (between.isBlank()) {
-                    result.add(toSignature(fnMatcher, sourceFile));
-                }
+            if (fnMatcher.lookingAt()) {
+                result.add(toSignature(fnMatcher, sourceFile));
+                continue;
             }
+
+            onUnparsedMarker.accept(sourceFile + ":" + lineNumber
+                    + ": // @mite is not followed by a parsable function signature, marker ignored");
         }
         return result;
+    }
+
+    /** 1-based line number of a character index. */
+    private static int lineOf(String content, int index) {
+        int line = 1;
+        for (int i = 0; i < index; i++) {
+            if (content.charAt(i) == '\n') line++;
+        }
+        return line;
     }
 
     /**
@@ -81,7 +131,7 @@ public class CppSignatureParser {
         String name = fnMatcher.group(2).trim();
         String rawParams = fnMatcher.group(3).trim();
         List<NativeFunctionSignature.NativeParam> params = new ArrayList<>();
-        if (!rawParams.isEmpty()) {
+        if (!rawParams.isEmpty() && !rawParams.equals("void")) {
             for (String param : rawParams.split(",")) {
                 params.add(parseParam(param.trim()));
             }

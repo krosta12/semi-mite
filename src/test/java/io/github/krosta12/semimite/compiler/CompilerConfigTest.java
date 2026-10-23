@@ -18,7 +18,7 @@ class CompilerConfigTest {
         assertEquals(Path.of(".mite-cache"), config.cacheDir());
         assertNull(config.compilerPath());
         assertEquals(List.of("-O2"), config.compilerFlags());
-        assertEquals(8, config.alignmentBytes());
+        assertEquals(8, config.pointerSize());
     }
 
     @Test
@@ -33,7 +33,7 @@ class CompilerConfigTest {
         assertEquals(cache, config.cacheDir());
         assertEquals("/usr/bin/g++", config.compilerPath());
         assertEquals(flags, config.compilerFlags());
-        assertEquals(8, config.alignmentBytes());
+        assertEquals(8, config.pointerSize());
     }
 
     @Test

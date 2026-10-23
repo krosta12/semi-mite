@@ -26,7 +26,12 @@ public class FunctionDescriptorBuilder {
     public FunctionDescriptor build(NativeFunctionSignature signature) {
         List<MemoryLayout> argLayouts = new ArrayList<>();
         for (NativeFunctionSignature.NativeParam param : signature.params()) {
-            argLayouts.add(typeMapper.toLayout(param.type()));
+            MemoryLayout layout = typeMapper.toLayout(param.type());
+            if (layout == null) {
+                throw new IllegalArgumentException(
+                        "'void' is not a valid parameter type: " + signature.name() + "(...)");
+            }
+            argLayouts.add(layout);
         }
         MemoryLayout[] args = argLayouts.toArray(new MemoryLayout[0]);
 

@@ -50,7 +50,7 @@ public class MiteBuilder {
                 config.cacheDir(),
                 config.compilerPath(),
                 config.compilerFlags(),
-                config.alignmentBytes()
+                config.pointerSize()
         );
         return this;
     }
@@ -67,7 +67,7 @@ public class MiteBuilder {
                 cacheDir,
                 config.compilerPath(),
                 config.compilerFlags(),
-                config.alignmentBytes()
+                config.pointerSize()
         );
         return this;
     }
@@ -84,7 +84,7 @@ public class MiteBuilder {
                 config.cacheDir(),
                 compilerPath,
                 config.compilerFlags(),
-                config.alignmentBytes()
+                config.pointerSize()
         );
         return this;
     }
@@ -101,7 +101,7 @@ public class MiteBuilder {
                 config.cacheDir(),
                 config.compilerPath(),
                 new ArrayList<>(flags),
-                config.alignmentBytes()
+                config.pointerSize()
         );
         return this;
     }
@@ -120,24 +120,24 @@ public class MiteBuilder {
                 config.cacheDir(),
                 config.compilerPath(),
                 updated,
-                config.alignmentBytes()
+                config.pointerSize()
         );
         return this;
     }
 
     /**
-     * Sets the native pointer/alignment size in bytes.
+     * Sets the native pointer size in bytes; must match the JVM's address size.
      *
-     * @param alignmentBytes the alignment size (typically 4 or 8)
+     * @param pointerSize the pointer size in bytes (4 or 8)
      * @return this builder, for chaining
      */
-    public MiteBuilder withAlignment(int alignmentBytes) {
+    public MiteBuilder withPointerSize(int pointerSize) {
         this.config = new CompilerConfig(
                 config.scriptsDir(),
                 config.cacheDir(),
                 config.compilerPath(),
                 config.compilerFlags(),
-                alignmentBytes
+                pointerSize
         );
         return this;
     }
@@ -165,7 +165,7 @@ public class MiteBuilder {
             context = bootstrap.startWithLibrary(
                     basePackage,
                     prebuiltLibraryPath,
-                    config.alignmentBytes()
+                    config.pointerSize()
             );
         } else {
             context = bootstrap.start(basePackage, config, hotReload);

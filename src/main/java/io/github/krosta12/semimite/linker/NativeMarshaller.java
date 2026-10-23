@@ -1,5 +1,6 @@
 package io.github.krosta12.semimite.linker;
 
+import io.github.krosta12.semimite.annotation.MiteInline;
 import io.github.krosta12.semimite.annotation.MiteStruct;
 import io.github.krosta12.semimite.memory.MiteArray;
 
@@ -7,6 +8,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,6 +24,14 @@ public class NativeMarshaller {
 
     private final Map<Class<?>, Field[]> fieldsCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, FieldLayout> layoutCache = new ConcurrentHashMap<>();
+
+    /** Guards against infinite recursion while laying out {@code @MiteInline} fields. */
+    private final ThreadLocal<Set<Class<?>>> layoutsInProgress =
+            ThreadLocal.withInitial(LinkedHashSet::new);
+
+    /** Upper bound on structures read by one unmarshal call; see mite.maxUnmarshalledNodes. */
+    private final int maxUnmarshalledNodes =
+            Integer.getInteger("mite.maxUnmarshalledNodes", 1_000_000);
 
     /**
      * Creates a marshaller using the default pointer size (8 bytes).
@@ -137,10 +147,11 @@ public class NativeMarshaller {
                 copyBackTasks.add(() -> MemorySegment.copy(seg, ValueLayout.JAVA_SHORT, 0, arr, 0, arr.length));
                 yield seg;
             }
-            case char[] arr -> {
-                MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_CHAR, arr);
-                copyBackTasks.add(() -> MemorySegment.copy(seg, ValueLayout.JAVA_CHAR, 0, arr, 0, arr.length));
-                yield seg;
+            case char[] ignored -> {
+                throw new IllegalArgumentException(
+                        "char[] is not supported (Java chars are 2 bytes, C++ chars are 1): "
+                                + "use byte[] for char*, String for const char*, "
+                                + "or short[] for wchar_t*/uint16_t*");
             }
             case boolean[] arr -> {
                 MemorySegment seg = arena.allocate(ValueLayout.JAVA_BYTE, arr.length);
@@ -300,7 +311,7 @@ public class NativeMarshaller {
         try {
             Class<?> clazz = obj.getClass();
             Field[] fields = getDeclaredFields(clazz);
-            FieldLayout layout = getLayout(clazz, fields);
+            FieldLayout layout = layoutOf(clazz);
 
             MemorySegment seg = arena.allocate(layout.totalSize(), layout.maxAlignment());
             seen.put(obj, seg);
@@ -351,27 +362,77 @@ public class NativeMarshaller {
             Object val = field.get(obj);
             Class<?> fType = field.getType();
 
-            if (val == null) {
-                if (!fType.isPrimitive()) seg.set(ValueLayout.ADDRESS, offset, MemorySegment.NULL);
+            if (isInline(field)) {
+                if (fType.isArray()) {
+                    writeInlineArrayField(field, val, seg, offset, copyBackTasks, arena, seen, nativeToJava);
+                } else {
+                    FieldLayout nested = layoutOf(fType);
+                    MemorySegment slot = seg.asSlice(offset, nested.totalSize());
+                    if (val == null) {
+                        slot.fill((byte) 0);
+                    } else {
+                        writeFields(val, getDeclaredFields(fType), nested.offsets(), slot,
+                                arena, copyBackTasks, seen, nativeToJava);
+                    }
+                }
                 continue;
             }
 
-            if (fType == int.class || fType == Integer.class) {
-                seg.set(ValueLayout.JAVA_INT, offset, ((Number) val).intValue());
-            } else if (fType == long.class || fType == Long.class) {
-                seg.set(ValueLayout.JAVA_LONG, offset, ((Number) val).longValue());
-            } else if (fType == float.class || fType == Float.class) {
-                seg.set(ValueLayout.JAVA_FLOAT, offset, ((Number) val).floatValue());
-            } else if (fType == double.class || fType == Double.class) {
-                seg.set(ValueLayout.JAVA_DOUBLE, offset, ((Number) val).doubleValue());
-            } else if (fType == short.class || fType == Short.class) {
-                seg.set(ValueLayout.JAVA_SHORT, offset, ((Number) val).shortValue());
-            } else if (fType == byte.class || fType == Byte.class) {
-                seg.set(ValueLayout.JAVA_BYTE, offset, ((Number) val).byteValue());
-            } else if (fType == boolean.class || fType == Boolean.class) {
+            if (val == null) {
+                if (!fType.isPrimitive()) seg.set(ValueLayout.ADDRESS, offset, MemorySegment.NULL);
+                if (fType == String.class) {
+                    copyBackTasks.add(() -> {
+                        try {
+                            MemorySegment current = seg.get(ValueLayout.ADDRESS, offset);
+                            if (current.address() != 0) {
+                                field.set(obj, readNullTerminatedString(
+                                        current.reinterpret(MAX_STRING_BYTES)));
+                            }
+                        } catch (IllegalAccessException e) {
+                            throw new RuntimeException(
+                                    "String copy-back failed for " + field.getName(), e);
+                        }
+                    });
+                }
+                continue;
+            }
+
+            if (fType == int.class) {
+                seg.set(ValueLayout.JAVA_INT, offset, (Integer) val);
+            } else if (fType == long.class) {
+                seg.set(ValueLayout.JAVA_LONG, offset, (Long) val);
+            } else if (fType == float.class) {
+                seg.set(ValueLayout.JAVA_FLOAT, offset, (Float) val);
+            } else if (fType == double.class) {
+                seg.set(ValueLayout.JAVA_DOUBLE, offset, (Double) val);
+            } else if (fType == short.class) {
+                seg.set(ValueLayout.JAVA_SHORT, offset, (Short) val);
+            } else if (fType == byte.class) {
+                seg.set(ValueLayout.JAVA_BYTE, offset, (Byte) val);
+            } else if (fType == boolean.class) {
                 seg.set(ValueLayout.JAVA_BOOLEAN, offset, (Boolean) val);
             } else if (fType == String.class) {
-                seg.set(ValueLayout.ADDRESS, offset, arena.allocateFrom((String) val));
+                String text = (String) val;
+                MemorySegment buffer = arena.allocateFrom(text);
+                seg.set(ValueLayout.ADDRESS, offset, buffer);
+                copyBackTasks.add(() -> {
+                    try {
+                        MemorySegment current = seg.get(ValueLayout.ADDRESS, offset);
+                        String updated;
+                        if (current.address() == 0) {
+                            updated = null;
+                        } else if (current.address() == buffer.address()) {
+                            updated = readStringInAllocatedBuffer(buffer);
+                        } else {
+                            updated = readNullTerminatedString(current.reinterpret(MAX_STRING_BYTES));
+                        }
+                        if (!Objects.equals(updated, text)) {
+                            field.set(obj, updated);
+                        }
+                    } catch (IllegalAccessException e) {
+                        throw new RuntimeException("String copy-back failed for " + field.getName(), e);
+                    }
+                });
             } else if (fType == float[].class) {
                 float[] arr = (float[]) val;
                 MemorySegment sub = arena.allocateFrom(ValueLayout.JAVA_FLOAT, arr);
@@ -429,47 +490,94 @@ public class NativeMarshaller {
     }
 
     /**
-     * Reads scalar and reference fields back from native memory into a Java
-     * object. Used both for copy-back after a call and for unmarshalling a
-     * returned native structure. Nested {@code @MiteStruct} references are
-     * resolved via {@code nativeToJava} rather than being re-unmarshalled.
+     * Reads fields back into a Java object after a call. {@code String} fields
+     * are skipped here and re-read from their own buffer.
      *
      * @param obj          the Java object to update
      * @param fields       the object's declared fields
-     * @param offsets      field-to-byte-offset mapping within the structure
-     * @param seg          the source native memory segment
-     * @param nativeToJava map of native addresses to their originating Java objects
-     * @throws Exception if a field cannot be set via reflection
+     * @param offsets      field-to-byte-offset mapping
+     * @param seg          the native structure
+     * @param nativeToJava native address to Java object map
+     * @throws Exception if a field cannot be set
      */
     private void readScalarFields(Object obj, Field[] fields, Map<Field, Long> offsets,
                                   MemorySegment seg, Map<Long, Object> nativeToJava) throws Exception {
+        readFields(obj, fields, offsets, seg, nativeToJava, false, null);
+    }
+
+    /**
+     * Reads fields back from native memory.
+     *
+     * @param obj          the Java object to update
+     * @param fields       the object's declared fields
+     * @param offsets      field-to-byte-offset mapping
+     * @param seg          the native structure
+     * @param nativeToJava native address to Java object map
+     * @param readStrings  whether {@code String} fields are read from pointers
+     * @param pending      unmarshal queue, or {@code null} during copy-back
+     * @throws Exception if a field cannot be set
+     */
+    private void readFields(Object obj, Field[] fields, Map<Field, Long> offsets,
+                            MemorySegment seg, Map<Long, Object> nativeToJava,
+                            boolean readStrings, Deque<PendingStruct> pending) throws Exception {
         for (Field field : fields) {
             Long offsetObj = offsets.get(field);
             if (offsetObj == null) continue;
             long offset = offsetObj;
             Class<?> fType = field.getType();
 
-            if (fType == int.class || fType == Integer.class)
+            if (isInline(field)) {
+                if (fType.isArray()) {
+                    readInlineArrayField(field, obj, seg, offset, nativeToJava, readStrings, pending);
+                } else {
+                    FieldLayout nested = layoutOf(fType);
+                    Object child = field.get(obj);
+                    if (child == null) {
+                        try {
+                            child = fType.getDeclaredConstructor().newInstance();
+                            field.set(obj, child);
+                        } catch (ReflectiveOperationException e) {
+                            continue;
+                        }
+                    }
+                    readFields(child, getDeclaredFields(fType), nested.offsets(),
+                            seg.asSlice(offset, nested.totalSize()), nativeToJava, readStrings, pending);
+                }
+                continue;
+            }
+
+            if (fType == int.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_INT, offset));
-            else if (fType == long.class || fType == Long.class)
+            else if (fType == long.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_LONG, offset));
-            else if (fType == float.class || fType == Float.class)
+            else if (fType == float.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_FLOAT, offset));
-            else if (fType == double.class || fType == Double.class)
+            else if (fType == double.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_DOUBLE, offset));
-            else if (fType == short.class || fType == Short.class)
+            else if (fType == short.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_SHORT, offset));
-            else if (fType == byte.class || fType == Byte.class)
+            else if (fType == byte.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_BYTE, offset));
-            else if (fType == boolean.class || fType == Boolean.class)
+            else if (fType == boolean.class)
                 field.set(obj, seg.get(ValueLayout.JAVA_BOOLEAN, offset));
-            else if (!fType.isPrimitive() && fType != String.class
-                    && !fType.isArray() && !Collection.class.isAssignableFrom(fType)) {
+            else if (fType == String.class) {
+                if (readStrings) {
+                    MemorySegment text = seg.get(ValueLayout.ADDRESS, offset);
+                    field.set(obj, text.address() == 0 ? null
+                            : readNullTerminatedString(text.reinterpret(MAX_STRING_BYTES)));
+                }
+            } else if (!fType.isPrimitive() && !fType.isArray()
+                    && !Collection.class.isAssignableFrom(fType)) {
                 MemorySegment childSeg = seg.get(ValueLayout.ADDRESS, offset);
                 if (childSeg.address() == 0) {
                     field.set(obj, null);
                 } else {
                     Object linked = nativeToJava.get(childSeg.address());
+                    if (linked == null && fType.isAnnotationPresent(MiteStruct.class)) {
+                        linked = pending != null
+                                ? enqueueUnmarshalled(childSeg, fType, nativeToJava, pending)
+                                : unmarshalCustomObject(childSeg, fType, nativeToJava);
+                    }
                     if (linked != null) field.set(obj, linked);
                 }
             }
@@ -490,39 +598,97 @@ public class NativeMarshaller {
     public Object unmarshalCustomObject(MemorySegment seg, Class<?> clazz,
                                         Map<Long, Object> nativeToJava) {
         if (seg.address() == 0) return null;
-        if (nativeToJava.containsKey(seg.address())) return nativeToJava.get(seg.address());
+        Object existing = nativeToJava.get(seg.address());
+        if (existing != null) return existing;
 
-        try {
-            Object obj = clazz.getDeclaredConstructor().newInstance();
-            nativeToJava.put(seg.address(), obj);
+        Object root = newUnmarshalled(clazz);
+        nativeToJava.put(seg.address(), root);
 
-            Field[] fields = getDeclaredFields(clazz);
-            FieldLayout layout = getLayout(clazz, fields);
-            long structSize = layout.totalSize();
-            MemorySegment sized = seg.reinterpret(structSize);
+        Deque<PendingStruct> pending = new ArrayDeque<>();
+        pending.addLast(new PendingStruct(root, clazz, seg));
 
-            readScalarFields(obj, fields, layout.offsets(), sized, nativeToJava);
-            return obj;
-        } catch (Exception e) {
-            throw new RuntimeException("Unmarshal failed for " + clazz.getName(), e);
+        int materialised = 0;
+        while (!pending.isEmpty()) {
+            if (++materialised > maxUnmarshalledNodes) {
+                throw new IllegalStateException(
+                        "Unmarshalling stopped after " + maxUnmarshalledNodes + " structures: "
+                                + "the graph is corrupt or larger than the configured limit "
+                                + "(system property mite.maxUnmarshalledNodes)");
+            }
+            PendingStruct next = pending.removeFirst();
+            FieldLayout layout = layoutOf(next.clazz());
+            MemorySegment sized = next.segment().reinterpret(layout.totalSize());
+            try {
+                readFields(next.object(), getDeclaredFields(next.clazz()), layout.offsets(),
+                        sized, nativeToJava, true, pending);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException("Unmarshal failed for " + next.clazz().getName(), e);
+            }
         }
+        return root;
+    }
+
+    /** A structure waiting to be read, held by the unmarshalling queue. */
+    private record PendingStruct(Object object, Class<?> clazz, MemorySegment segment) {
+    }
+
+    /** Creates an empty instance of a {@code @MiteStruct} class. */
+    private Object newUnmarshalled(Class<?> clazz) {
+        try {
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("Unmarshal failed for " + clazz.getName()
+                    + ": a no-argument constructor is required", e);
+        }
+    }
+
+    /** Registers a C++-created structure and queues it instead of recursing. */
+    private Object enqueueUnmarshalled(MemorySegment seg, Class<?> clazz,
+                                       Map<Long, Object> nativeToJava,
+                                       Deque<PendingStruct> pending) {
+        Object obj = newUnmarshalled(clazz);
+        nativeToJava.put(seg.address(), obj);
+        pending.addLast(new PendingStruct(obj, clazz, seg));
+        return obj;
     }
 
     /**
      * Reads a null-terminated C string from native memory into a Java {@link String}.
      *
      * @param seg the native memory segment containing the string
-     * @return the decoded UTF-8 string (truncated at {@link #MAX_STRING_BYTES} if unbounded)
+     * @return the decoded UTF-8 string
+     * @throws IllegalArgumentException if no terminator is found within {@link #MAX_STRING_BYTES}
      */
     String readNullTerminatedString(MemorySegment seg) {
         long maxLen = seg.byteSize() == 0 ? MAX_STRING_BYTES : Math.min(seg.byteSize(), MAX_STRING_BYTES);
         MemorySegment safe = seg.byteSize() > 0 ? seg : seg.reinterpret(MAX_STRING_BYTES);
         long len = 0;
-        while (len < maxLen && safe.get(ValueLayout.JAVA_BYTE, len) != 0) len++;
+        while (len < maxLen && safe.get(ValueLayout.JAVA_BYTE, len) != 0) {
+            len++;
+        }
+        if (len == maxLen) {
+            throw new IllegalArgumentException(
+                    "Refusing to read a native string: no terminator within " + maxLen
+                            + " bytes, the value would be silently truncated");
+        }
         return new String(safe.asSlice(0, len).toArray(ValueLayout.JAVA_BYTE), java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    private static final long MAX_STRING_BYTES = 65536;
+    /** Scan limit for strings of unknown length: a runaway guard, not a truncation limit. */
+    private static final long MAX_STRING_BYTES = 64L * 1024 * 1024;
+
+    /** Reads a string from a buffer allocated here, bounded by its exact size. */
+    private static String readStringInAllocatedBuffer(MemorySegment buffer) {
+        long size = buffer.byteSize();
+        long len = 0;
+        while (len < size && buffer.get(ValueLayout.JAVA_BYTE, len) != 0) {
+            len++;
+        }
+        return new String(buffer.asSlice(0, len).toArray(ValueLayout.JAVA_BYTE),
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
 
     /**
      * Computed native layout of a Java object's fields, mirroring a C/C++
@@ -541,24 +707,38 @@ public class NativeMarshaller {
      * on first access.
      *
      * @param clazz  the {@code @MiteStruct}-annotated class
-     * @param fields the class's declared fields
      * @return the computed (or cached) field layout
      */
-    private FieldLayout getLayout(Class<?> clazz, Field[] fields) {
+    private FieldLayout layoutOf(Class<?> clazz) {
         FieldLayout cached = layoutCache.get(clazz);
         if (cached != null) return cached;
-        FieldLayout computed = computeLayout(fields);
-        layoutCache.putIfAbsent(clazz, computed);
-        return layoutCache.get(clazz);
+
+        Set<Class<?>> inProgress = layoutsInProgress.get();
+        if (!inProgress.add(clazz)) {
+            throw new IllegalArgumentException(
+                    "Cyclic @MiteInline containment: " + clazz.getName()
+                            + " contains itself by value, which cannot be represented as a C++ struct");
+        }
+        try {
+            FieldLayout computed = computeLayout(getDeclaredFields(clazz));
+            FieldLayout existing = layoutCache.putIfAbsent(clazz, computed);
+            return existing != null ? existing : computed;
+        } finally {
+            inProgress.remove(clazz);
+            if (inProgress.isEmpty()) {
+                layoutsInProgress.remove();
+            }
+        }
     }
 
     /**
-     * Computes byte offsets, total size, and required alignment for a set of
-     * fields, following standard C-style struct layout rules (each field
-     * aligned to its own size, struct padded to its largest field's alignment).
+     * Computes offsets, total size and alignment for the given fields, following
+     * C struct rules. {@code @MiteInline} fields contribute their own size and
+     * alignment instead of a pointer.
      *
      * @param fields the fields to lay out, in declaration order
      * @return the computed layout
+     * @throws IllegalArgumentException if a field cannot be represented natively
      */
     private FieldLayout computeLayout(Field[] fields) {
         Map<Field, Long> offsets = new HashMap<>();
@@ -566,9 +746,32 @@ public class NativeMarshaller {
         long maxAlign = 1;
 
         for (Field field : fields) {
-            Class<?> fType = field.getType();
-            long size = fieldSize(fType);
-            long align = fieldAlignment(fType);
+            validateField(field);
+
+            long size;
+            long align;
+            if (isInline(field)) {
+                Class<?> inlineType = field.getType();
+                if (inlineType.isArray()) {
+                    Class<?> element = inlineType.getComponentType();
+                    if (element.isAnnotationPresent(MiteStruct.class)) {
+                        FieldLayout nested = layoutOf(element);
+                        size = nested.totalSize() * inlineLength(field);
+                        align = nested.maxAlignment();
+                    } else {
+                        size = fieldSize(element) * inlineLength(field);
+                        align = fieldAlignment(element);
+                    }
+                } else {
+                    FieldLayout nested = layoutOf(inlineType);
+                    size = nested.totalSize();
+                    align = nested.maxAlignment();
+                }
+            } else {
+                size = fieldSize(field.getType());
+                align = fieldAlignment(field.getType());
+            }
+
             if (align > maxAlign) maxAlign = align;
             offset = (offset + align - 1) & -align;
             offsets.put(field, offset);
@@ -580,6 +783,231 @@ public class NativeMarshaller {
         return new FieldLayout(offsets, total, maxAlign);
     }
 
+    /** Whether the field is stored by value inside its parent structure. */
+    private boolean isInline(Field field) {
+        return field.isAnnotationPresent(MiteInline.class);
+    }
+
+    /** Element count declared on an inline array field. */
+    private int inlineLength(Field field) {
+        int length = field.getAnnotation(MiteInline.class).length();
+        if (length <= 0) {
+            throw new IllegalArgumentException(
+                    "@MiteInline on an array field requires the element count: "
+                            + field.getDeclaringClass().getSimpleName() + "." + field.getName()
+                            + " - write @MiteInline(length = N) so it matches the C++ array size");
+        }
+        return length;
+    }
+
+    /** Layout used for bulk-copying an inline array of the given primitive type. */
+    private static ValueLayout primitiveLayout(Class<?> type) {
+        if (type == float.class) return ValueLayout.JAVA_FLOAT;
+        if (type == int.class) return ValueLayout.JAVA_INT;
+        if (type == long.class) return ValueLayout.JAVA_LONG;
+        if (type == double.class) return ValueLayout.JAVA_DOUBLE;
+        if (type == short.class) return ValueLayout.JAVA_SHORT;
+        if (type == byte.class) return ValueLayout.JAVA_BYTE;
+        throw new IllegalArgumentException("Unsupported inline array element type: " + type.getName());
+    }
+
+    /** Writes a primitive inline array. {@code boolean[]} is copied byte by byte. */
+    private void writePrimitiveInlineArray(Object array, Class<?> element, MemorySegment seg,
+                                           long offset, int length) {
+        if (element == boolean.class) {
+            boolean[] bits = (boolean[]) array;
+            for (int i = 0; i < length; i++) {
+                seg.set(ValueLayout.JAVA_BYTE, offset + i, (byte) (bits[i] ? 1 : 0));
+            }
+            return;
+        }
+        MemorySegment.copy(array, 0, seg, primitiveLayout(element), offset, length);
+    }
+
+    /** Reads a primitive inline array back. {@code boolean[]} is copied byte by byte. */
+    private void readPrimitiveInlineArray(Object array, Class<?> element, MemorySegment seg,
+                                          long offset, int length) {
+        if (element == boolean.class) {
+            boolean[] bits = (boolean[]) array;
+            for (int i = 0; i < length; i++) {
+                bits[i] = seg.get(ValueLayout.JAVA_BYTE, offset + i) != 0;
+            }
+            return;
+        }
+        MemorySegment.copy(seg, primitiveLayout(element), offset, array, 0, length);
+    }
+
+    /**
+     * Writes an inline array field: primitives by bulk copy, structures element
+     * by element. Registers a copy-back task for the field.
+     *
+     * @param field the inline array field
+     * @param value the Java array, which must not be {@code null}
+     * @throws Exception if a field cannot be read via reflection
+     */
+    private void writeInlineArrayField(Field field, Object value, MemorySegment seg, long offset,
+                                       List<Runnable> copyBackTasks, Arena arena,
+                                       Map<Object, MemorySegment> seen,
+                                       Map<Long, Object> nativeToJava) throws Exception {
+        Class<?> element = field.getType().getComponentType();
+        int length = inlineLength(field);
+        String where = field.getDeclaringClass().getSimpleName() + "." + field.getName();
+
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Inline array field cannot be null, its storage is part of the structure: " + where);
+        }
+
+        int actual = java.lang.reflect.Array.getLength(value);
+        if (actual != length) {
+            throw new IllegalArgumentException(
+                    "Inline array length mismatch for " + where + ": declared " + length
+                            + ", got " + actual + " (the count must match the C++ array size)");
+        }
+
+        if (element.isAnnotationPresent(MiteStruct.class)) {
+            FieldLayout nested = layoutOf(element);
+            long elementSize = nested.totalSize();
+
+            for (int i = 0; i < length; i++) {
+                Object item = java.lang.reflect.Array.get(value, i);
+                MemorySegment slot = seg.asSlice(offset + (long) i * elementSize, elementSize);
+                if (item == null) {
+                    slot.fill((byte) 0);
+                } else {
+                    writeFields(item, getDeclaredFields(element), nested.offsets(), slot,
+                            arena, copyBackTasks, seen, nativeToJava);
+                }
+            }
+
+            copyBackTasks.add(() -> {
+                for (int i = 0; i < length; i++) {
+                    try {
+                        Object item = java.lang.reflect.Array.get(value, i);
+                        if (item == null) {
+                            item = element.getDeclaredConstructor().newInstance();
+                            java.lang.reflect.Array.set(value, i, item);
+                        }
+                        readScalarFields(item, getDeclaredFields(element), nested.offsets(),
+                                seg.asSlice(offset + (long) i * elementSize, elementSize), nativeToJava);
+                    } catch (Exception e) {
+                        throw new RuntimeException("Copy-back failed for inline array "
+                                + where + "[" + i + "]", e);
+                    }
+                }
+            });
+            return;
+        }
+
+        writePrimitiveInlineArray(value, element, seg, offset, length);
+        copyBackTasks.add(() -> readPrimitiveInlineArray(value, element, seg, offset, length));
+    }
+
+    /** Reads an inline array field back, creating the array when it is missing. */
+    private void readInlineArrayField(Field field, Object owner, MemorySegment seg, long offset,
+                                      Map<Long, Object> nativeToJava, boolean readStrings,
+                                      Deque<PendingStruct> pending) throws Exception {
+        Class<?> element = field.getType().getComponentType();
+        int length = inlineLength(field);
+
+        Object array = field.get(owner);
+        if (array == null || java.lang.reflect.Array.getLength(array) != length) {
+            array = java.lang.reflect.Array.newInstance(element, length);
+            field.set(owner, array);
+        }
+
+        if (element.isAnnotationPresent(MiteStruct.class)) {
+            FieldLayout nested = layoutOf(element);
+            long elementSize = nested.totalSize();
+            for (int i = 0; i < length; i++) {
+                Object item = java.lang.reflect.Array.get(array, i);
+                if (item == null) {
+                    item = element.getDeclaredConstructor().newInstance();
+                    java.lang.reflect.Array.set(array, i, item);
+                }
+                readFields(item, getDeclaredFields(element), nested.offsets(),
+                        seg.asSlice(offset + (long) i * elementSize, elementSize), nativeToJava,
+                        readStrings, pending);
+            }
+            return;
+        }
+
+        readPrimitiveInlineArray(array, element, seg, offset, length);
+    }
+
+    /**
+     * Rejects field types that have no native representation.
+     *
+     * @param field the field to validate
+     * @throws IllegalArgumentException if the field type cannot be marshalled
+     */
+    private void validateField(Field field) {
+        Class<?> type = field.getType();
+        String where = field.getDeclaringClass().getSimpleName() + "." + field.getName();
+
+        if (isInline(field)) {
+            if (type.isArray()) {
+                Class<?> element = type.getComponentType();
+                if (element == char.class) {
+                    throw new IllegalArgumentException(
+                            "char[] is not supported as an inline array (Java chars are 2 bytes, C++ chars are 1): "
+                                    + where + "; use byte[]");
+                }
+                if (!element.isPrimitive() && !element.isAnnotationPresent(MiteStruct.class)) {
+                    throw new IllegalArgumentException(
+                            "@MiteInline array elements must be primitive or @MiteStruct: "
+                                    + where + " : " + element.getName());
+                }
+                inlineLength(field);
+                return;
+            }
+            if (!type.isAnnotationPresent(MiteStruct.class)) {
+                throw new IllegalArgumentException(
+                        "@MiteInline requires the field type to be annotated with @MiteStruct: "
+                                + where + " : " + type.getName());
+            }
+            return;
+        }
+
+        if (type.isPrimitive()) {
+            if (type == char.class) {
+                throw new IllegalArgumentException(
+                        "Java 'char' is 2 bytes and has no C++ equivalent, so " + where
+                                + " cannot be marshalled: use 'byte' for a C++ char or 'short' for a 16-bit value");
+            }
+            return;
+        }
+
+        if (type == String.class) return;
+
+        if (type.isArray()) {
+            if (type == char[].class) {
+                throw new IllegalArgumentException(
+                        "char[] is not supported (Java chars are 2 bytes, C++ chars are 1): " + where
+                                + "; use byte[]");
+            }
+            if (type == float[].class || type == int[].class || type == long[].class
+                    || type == double[].class || type == byte[].class || type == short[].class
+                    || type == boolean[].class || type == Object[].class) {
+                return;
+            }
+            if (type.getComponentType().isAnnotationPresent(MiteStruct.class)) {
+                return;
+            }
+            throw new IllegalArgumentException(
+                    "Unsupported array field type: " + where + " : " + type.getName()
+                            + " (elements must be a primitive or @MiteStruct)");
+        }
+
+        if (Collection.class.isAssignableFrom(type)) return;
+        if (type.isAnnotationPresent(MiteStruct.class)) return;
+
+        throw new IllegalArgumentException(
+                "Unsupported @MiteStruct field: " + where + " : " + type.getName()
+                        + ". Supported: primitives, String, primitive arrays, Collection, and @MiteStruct "
+                        + "(pointer by default, by value with @MiteInline)");
+    }
+
     /**
      * Returns the native size in bytes for a field's type.
      *
@@ -588,13 +1016,13 @@ public class NativeMarshaller {
      * byte/boolean, or {@link #pointerSize} for reference types
      */
     private long fieldSize(Class<?> fType) {
-        if (fType == int.class || fType == Integer.class
-                || fType == float.class || fType == Float.class) return 4;
-        if (fType == long.class || fType == Long.class
-                || fType == double.class || fType == Double.class) return 8;
-        if (fType == short.class || fType == Short.class) return 2;
-        if (fType == boolean.class || fType == Boolean.class
-                || fType == byte.class || fType == Byte.class) return 1;
+        if (fType == int.class
+                || fType == float.class) return 4;
+        if (fType == long.class
+                || fType == double.class) return 8;
+        if (fType == short.class) return 2;
+        if (fType == boolean.class
+                || fType == byte.class) return 1;
         return pointerSize;
     }
 
@@ -624,7 +1052,7 @@ public class NativeMarshaller {
         Field[] fields = clazz.getDeclaredFields();
         List<Field> result = new ArrayList<>();
         for (Field f : fields) {
-            if (!f.isSynthetic()) {
+            if (!f.isSynthetic() && !Modifier.isStatic(f.getModifiers())) {
                 f.setAccessible(true);
                 result.add(f);
             }

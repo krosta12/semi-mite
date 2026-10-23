@@ -78,12 +78,12 @@ class MiteBuilderConfigIntegrationTest {
     }
 
     /**
-     * withAlignment sets alignmentBytes.
+     * withPointerSize sets the pointer size.
      */
     @Test
-    void withAlignmentIsChainable() {
+    void withPointerSizeIsChainable() {
         MiteBuilder b = Mite.scan("io.example.nonexistent")
-                .withAlignment(8);
+                .withPointerSize(8);
         assertNotNull(b);
     }
 
@@ -159,7 +159,7 @@ class MiteBuilderConfigIntegrationTest {
                     .withCompiler("g++")
                     .withFlags(List.of("-O2"))
                     .withFlag("-DNDEBUG")
-                    .withAlignment(8)
+                    .withPointerSize(8)
                     .start();
             ctx.close();
         });

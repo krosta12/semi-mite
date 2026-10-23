@@ -31,6 +31,8 @@ public class HotReloadWatcher implements AutoCloseable {
 
     private static final long DEBOUNCE_MILLIS = 300;
 
+    private static final System.Logger LOGGER = System.getLogger(HotReloadWatcher.class.getName());
+
     private final CppSourceScanner sourceScanner = new CppSourceScanner();
     private final CppSignatureParser signatureParser = new CppSignatureParser();
     private final NativeCompiler nativeCompiler = new NativeCompiler();
@@ -171,14 +173,15 @@ public class HotReloadWatcher implements AutoCloseable {
             List<Path> sources = sourceScanner.scan(config.scriptsDir());
             List<NativeFunctionSignature> signatures = new ArrayList<>();
             for (Path source : sources) {
-                signatures.addAll(signatureParser.parse(source));
+                signatures.addAll(signatureParser.parse(source,
+                        message -> LOGGER.log(System.Logger.Level.WARNING, message)));
             }
             String libraryName = "mite-native-" + buildCounter.incrementAndGet();
             Path library = nativeCompiler.compile(sources, config, libraryName);
             LinkedLibrary linked = linker.link(library, signatures);
             onRebuild.accept(linked);
         } catch (Exception e) {
-            System.err.println("[MITE] hot reload failed: " + e.getMessage());
+            LOGGER.log(System.Logger.Level.ERROR, "hot reload failed", e);
         }
     }
 

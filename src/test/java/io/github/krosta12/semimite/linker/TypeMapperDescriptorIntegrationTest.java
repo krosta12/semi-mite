@@ -5,6 +5,7 @@ import io.github.krosta12.semimite.parser.NativeFunctionSignature.NativeParam;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
 
@@ -83,12 +84,18 @@ class TypeMapperDescriptorIntegrationTest {
     void javaToCppTypeMapsBasicTypes() {
         assertEquals("void", mapper.javaToCppType(void.class));
         assertEquals("int", mapper.javaToCppType(int.class));
-        assertEquals("long", mapper.javaToCppType(long.class));
+        assertEquals("long long", mapper.javaToCppType(long.class));
         assertEquals("double", mapper.javaToCppType(double.class));
         assertEquals("float", mapper.javaToCppType(float.class));
         assertEquals("short", mapper.javaToCppType(short.class));
         assertEquals("char", mapper.javaToCppType(byte.class));
         assertEquals("bool", mapper.javaToCppType(boolean.class));
+    }
+
+    @Test
+    void cLongMatchesPlatformAbi() {
+        assertEquals(Linker.nativeLinker().canonicalLayouts().get("long"),
+                mapper.toLayout("long"));
     }
 
     @Test

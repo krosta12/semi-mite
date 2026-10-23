@@ -1,7 +1,6 @@
 package io.github.krosta12.semimite.linker;
 
-import io.github.krosta12.semimite.compiler.OsUtil;
-
+import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.ValueLayout;
 import java.util.HashMap;
@@ -11,31 +10,43 @@ import java.util.Map;
  * Maps C++ type names (as strings, e.g. {@code "int"}, {@code "float"},
  * {@code "char*"}, {@code "unsigned long"}) to the corresponding
  * {@link MemoryLayout} from the Java FFM API.
+ * <p>
+ * Sizes that differ between platforms ({@code long}, {@code size_t},
+ * {@code wchar_t}, {@code bool}) are taken from
+ * {@link Linker#canonicalLayouts()}, i.e. from the same ABI description the
+ * native linker itself uses for the downcall. Requires JDK 22+.
  */
 public class LanguagesTypeMapper {
 
     private static final Map<String, MemoryLayout> PRIMITIVES = new HashMap<>();
 
-    private static final MemoryLayout LONG_LAYOUT =
-            OsUtil.isWindows() ? ValueLayout.JAVA_INT : ValueLayout.JAVA_LONG;
-
     static {
-        PRIMITIVES.put("void", null);
-        PRIMITIVES.put("char", ValueLayout.JAVA_BYTE);
-        PRIMITIVES.put("short", ValueLayout.JAVA_SHORT);
-        PRIMITIVES.put("bool", ValueLayout.JAVA_BOOLEAN);
-        PRIMITIVES.put("int", ValueLayout.JAVA_INT);
-        PRIMITIVES.put("float", ValueLayout.JAVA_FLOAT);
-        PRIMITIVES.put("double", ValueLayout.JAVA_DOUBLE);
-        PRIMITIVES.put("long", LONG_LAYOUT);
-        PRIMITIVES.put("long long", ValueLayout.JAVA_LONG);
+        Map<String, MemoryLayout> abi = Linker.nativeLinker().canonicalLayouts();
+        MemoryLayout longLayout = abi.get("long");
+        MemoryLayout sizeLayout = abi.get("size_t");
 
+        PRIMITIVES.put("bool", abi.get("bool"));
+        PRIMITIVES.put("wchar_t", abi.get("wchar_t"));
 
-        PRIMITIVES.put("unsigned char", ValueLayout.JAVA_BYTE);
-        PRIMITIVES.put("unsigned short", ValueLayout.JAVA_SHORT);
-        PRIMITIVES.put("unsigned int", ValueLayout.JAVA_INT);
-        PRIMITIVES.put("unsigned long", LONG_LAYOUT);
-        PRIMITIVES.put("unsigned long long", ValueLayout.JAVA_LONG);
+        put(ValueLayout.JAVA_BYTE, "char", "signed char", "unsigned char", "int8_t", "uint8_t");
+
+        put(ValueLayout.JAVA_SHORT, "short", "short int", "signed short", "unsigned short", "unsigned short int", "int16_t", "uint16_t");
+
+        put(ValueLayout.JAVA_INT, "int", "signed int", "signed", "unsigned", "unsigned int", "int32_t", "uint32_t");
+
+        put(ValueLayout.JAVA_FLOAT, "float");
+        put(ValueLayout.JAVA_DOUBLE, "double");
+
+        put(longLayout, "long", "long int", "signed long", "unsigned long", "unsigned long int");
+        put(ValueLayout.JAVA_LONG, "long long", "long long int", "signed long long", "unsigned long long", "unsigned long long int", "int64_t", "uint64_t");
+
+        put(sizeLayout, "size_t", "ssize_t", "ptrdiff_t", "intptr_t", "uintptr_t");
+    }
+
+    private static void put(MemoryLayout layout, String... names) {
+        for (String name : names) {
+            PRIMITIVES.put(name, layout);
+        }
     }
 
 
@@ -66,8 +77,7 @@ public class LanguagesTypeMapper {
      * @return {@code true} if the normalized type is exactly {@code "void"}
      */
     public boolean isVoid(String cppType) {
-        String normalize = normalize(cppType);
-        return normalize.equals("void") && !isPointer(normalize);
+        return normalize(cppType).equals("void");
     }
 
     /**
@@ -89,18 +99,31 @@ public class LanguagesTypeMapper {
      */
     private String normalize(String cppType) {
         return cppType
-                .replace("const", "")
+                .replaceAll("\\b(const|volatile)\\b", "")
+                .replace('&', '*')
                 .trim()
                 .replaceAll("\\s+", " ")
-                .replace(" *", "*");
+                .replaceAll(" ?\\*", "*");
     }
 
-    //more options?
+    /**
+     * Maps a Java type to the C type name used for the native signature.
+     * Java {@code long} is always 8 bytes, so it maps to {@code long long}:
+     * for a C {@code long} on Windows (4 bytes) declare the Java parameter as {@code int}.
+     *
+     * @param javaType the Java parameter or return type
+     * @return the C type name; {@code "void*"} for all reference types
+     * @throws IllegalArgumentException for Java {@code char}, which has no C equivalent
+     */
     public String javaToCppType(Class<?> javaType) {
+        if (javaType == char.class) {
+            throw new IllegalArgumentException(
+                    "Java 'char' is 2 bytes and has no C equivalent; use 'byte' for C char or 'short' for 16-bit value");
+        }
         return switch (javaType.getTypeName()) {
             case "void" -> "void";
             case "int" -> "int";
-            case "long" -> "long";
+            case "long" -> "long long";
             case "double" -> "double";
             case "float" -> "float";
             case "short" -> "short";

@@ -11,20 +11,21 @@ import java.util.List;
  * @param compilerPath   explicit path to the compiler executable, or {@code null}
  *                       to auto-resolve via {@link CompilerResolver}
  * @param compilerFlags  additional flags passed to the compiler invocation
- * @param alignmentBytes native pointer/alignment size in bytes (4 or 8)
+ * @param pointerSize    native pointer size in bytes (4 or 8); it must match the
+ *                       address size of the JVM, so on a 64-bit JVM only 8 is accepted
  */
 public record CompilerConfig(
         Path scriptsDir,
         Path cacheDir,
         String compilerPath,
         List<String> compilerFlags,
-        int alignmentBytes
+        int pointerSize
 ) {
 
     /**
      * Returns a default configuration: sources in {@code cppScripts},
      * cache in {@code .mite-cache}, auto-resolved compiler, {@code -O2} flag,
-     * and 8-byte alignment.
+     * and an 8-byte pointer size.
      *
      * @return the default {@code CompilerConfig}
      */

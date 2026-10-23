@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class MiteBootstrap implements AutoCloseable {
 
+    private static final System.Logger LOGGER = System.getLogger(MiteBootstrap.class.getName());
+
     private final MiteClientScanner clientScanner = new MiteClientScanner();
     private final CppSourceScanner cppSourceScanner = new CppSourceScanner();
     private final CppSignatureParser signatureParser = new CppSignatureParser();
@@ -76,7 +78,7 @@ public class MiteBootstrap implements AutoCloseable {
         context.addLibrary(initialManaged);
 
         AtomicReference<ManagedLibrary> currentLib = new AtomicReference<>(initialManaged);
-        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(config.alignmentBytes());
+        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(config.pointerSize());
 
         for (Class<?> clientInterface : clientRegistry.getClients()) {
             context.put(clientInterface, proxyFactory.create(clientInterface, currentLib::get));
@@ -89,6 +91,7 @@ public class MiteBootstrap implements AutoCloseable {
                 context.addLibrary(managed);
 
                 old.retire();
+                context.removeLibrary(old);
             });
         }
         return context;
@@ -105,7 +108,8 @@ public class MiteBootstrap implements AutoCloseable {
         List<Path> sources = cppSourceScanner.scan(config.scriptsDir());
         List<NativeFunctionSignature> signatures = new ArrayList<>();
         for (Path source : sources) {
-            signatures.addAll(signatureParser.parse(source));
+            signatures.addAll(signatureParser.parse(source,
+                    message -> LOGGER.log(System.Logger.Level.WARNING, message)));
         }
         Path library = nativeCompiler.compile(sources, config, "mite-native");
         return linker.link(library, signatures);
@@ -124,10 +128,10 @@ public class MiteBootstrap implements AutoCloseable {
      *
      * @param basePackage    the package to scan for @MiteClient interfaces
      * @param libraryPath    path to the pre-built .dll / .so / .dylib
-     * @param alignmentBytes native pointer alignment (typically 8)
+     * @param pointerSize    native pointer size (typically 8)
      * @return a ready MiteContext
      */
-    public MiteContext startWithLibrary(String basePackage, Path libraryPath, int alignmentBytes) {
+    public MiteContext startWithLibrary(String basePackage, Path libraryPath, int pointerSize) {
         MiteClientRegistry clientRegistry = clientScanner.scan(basePackage);
         MiteContext context = new MiteContext();
         if (clientRegistry.getClients().isEmpty()) {
@@ -140,7 +144,7 @@ public class MiteBootstrap implements AutoCloseable {
         context.addLibrary(managed);
 
         AtomicReference<ManagedLibrary> currentLib = new AtomicReference<>(managed);
-        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(alignmentBytes);
+        MiteClientProxyFactory proxyFactory = new MiteClientProxyFactory(pointerSize);
 
         for (Class<?> iface : clientRegistry.getClients()) {
             context.put(iface, proxyFactory.create(iface, currentLib::get));

@@ -82,6 +82,15 @@ public class MiteContext implements AutoCloseable {
     }
 
     /**
+     * Forgets a library that has already been retired.
+     *
+     * @param library the retired library to forget
+     */
+    void removeLibrary(ManagedLibrary library) {
+        libraries.remove(library);
+    }
+
+    /**
      * Closes this context: closes the owning bootstrap (if any), all tracked
      * {@link MiteArray} instances, and retires all managed native libraries.
      * Safe to call multiple times.

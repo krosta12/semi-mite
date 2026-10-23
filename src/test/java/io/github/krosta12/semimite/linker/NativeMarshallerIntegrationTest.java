@@ -221,16 +221,14 @@ class NativeMarshallerIntegrationTest {
     }
 
     @Test
-    void charArrayCopyBackWorks() {
+    void charArrayArgumentIsRejectedInsteadOfSendingUtf16() {
         char[] arr = {'a', 'b', 'c'};
+
         try (Arena arena = Arena.ofConfined()) {
-            List<Runnable> tasks = tasks();
-            MemorySegment seg = (MemorySegment) marshaller.marshal(arr, "char*", arena, tasks, seen(), n2j());
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                    () -> marshaller.marshal(arr, "char*", arena, tasks(), seen(), n2j()));
 
-            seg.setAtIndex(ValueLayout.JAVA_CHAR, 0, 'Z');
-            tasks.forEach(Runnable::run);
-
-            assertEquals('Z', arr[0]);
+            assertTrue(ex.getMessage().contains("char[]"), ex.getMessage());
         }
     }
 

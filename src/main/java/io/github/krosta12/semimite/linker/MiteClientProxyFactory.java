@@ -7,6 +7,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.*;
 import java.util.function.Supplier;
@@ -66,7 +67,23 @@ public class MiteClientProxyFactory {
      */
     @SuppressWarnings("unchecked")
     public <T> T create(Class<T> clientInterface, Supplier<ManagedLibrary> librarySupplier) {
+        validateSignature(clientInterface);
+
         InvocationHandler handler = (proxy, method, args) -> {
+            if (method.getDeclaringClass() == Object.class) {
+                return switch (method.getName()) {
+                    case "toString" -> "MiteClient(" + clientInterface.getName() + ")";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> {
+                        throw new UnsupportedOperationException("Unsupported Object method: " + method);
+                    }
+                };
+            }
+            if (method.isDefault()) {
+                return InvocationHandler.invokeDefault(proxy, method, args);
+            }
+
             ManagedLibrary library = librarySupplier.get();
             if (!library.acquire()) {
                 throw new IllegalStateException(
@@ -117,6 +134,33 @@ public class MiteClientProxyFactory {
         );
     }
 
+
+    /** Rejects methods with types that can never be marshalled, before the first call. */
+    private static void validateSignature(Class<?> clientInterface) {
+        for (Method method : clientInterface.getMethods()) {
+            if (method.isDefault() || Modifier.isStatic(method.getModifiers()) || method.isSynthetic()) {
+                continue;
+            }
+            String where = clientInterface.getSimpleName() + "." + method.getName();
+            if (method.getReturnType() == char.class) {
+                throw new IllegalArgumentException(
+                        "Java 'char' has no C++ equivalent (2 bytes): " + where
+                                + " returns char; use 'byte' or 'short'");
+            }
+            for (Class<?> paramType : method.getParameterTypes()) {
+                if (paramType == char.class) {
+                    throw new IllegalArgumentException(
+                            "Java 'char' has no C++ equivalent (2 bytes): " + where
+                                    + " takes char; use 'byte' or 'short'");
+                }
+                if (paramType == char[].class) {
+                    throw new IllegalArgumentException(
+                            "char[] is not supported (Java chars are 2 bytes): " + where
+                                    + " takes char[]; use byte[], String or short[]");
+                }
+            }
+        }
+    }
 
     /**
      * Derives a C++ type hint for each argument based on the Java method's
