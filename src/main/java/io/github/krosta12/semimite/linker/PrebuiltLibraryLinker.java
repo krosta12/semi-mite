@@ -1,5 +1,7 @@
 package io.github.krosta12.semimite.linker;
 
+import io.github.krosta12.semimite.annotation.CType;
+import io.github.krosta12.semimite.annotation.NativeName;
 import io.github.krosta12.semimite.linker.NativeLibraryLinker.LinkedLibrary;
 import io.github.krosta12.semimite.parser.NativeFunctionSignature;
 
@@ -33,14 +35,26 @@ public class PrebuiltLibraryLinker {
     }
 
     private NativeFunctionSignature toSignature(Method method) {
-        String returnType = typeMapper.javaToCppType(method.getReturnType());
+        String returnType = method.isAnnotationPresent(CType.class) ?
+                method.getAnnotation(CType.class).type() :
+                typeMapper.javaToCppType(method.getReturnType());
 
         List<NativeFunctionSignature.NativeParam> params = new ArrayList<>();
         for (var param : method.getParameters()) {
-            String cppType = typeMapper.javaToCppType(param.getType());
+
+            CType annotationCType = param.getAnnotation(CType.class);
+            String cppType = annotationCType != null ?
+                    annotationCType.type() :
+                    typeMapper.javaToCppType(param.getType());
+
             params.add(new NativeFunctionSignature.NativeParam(cppType, param.getName()));
         }
 
-        return new NativeFunctionSignature(method.getName(), returnType, params, "<prebuilt>");
+        NativeName annotationNativeName = method.getAnnotation(NativeName.class);
+        String nativeName = (annotationNativeName != null) ?
+                annotationNativeName.name() :
+                method.getName();
+
+        return new NativeFunctionSignature(nativeName, returnType, params, "<prebuilt>");
     }
 }

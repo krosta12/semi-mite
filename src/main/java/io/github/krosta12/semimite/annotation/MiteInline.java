@@ -1,9 +1,6 @@
 package io.github.krosta12.semimite.annotation;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import java.lang.annotation.*;
 
 
 /**
@@ -14,6 +11,7 @@ import java.lang.annotation.Target;
  * {@code @MiteInline(length = 4) double[] values} matches {@code double values[4]}.
  * </p>
  */
+@Documented
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface MiteInline {
